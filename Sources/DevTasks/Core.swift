@@ -82,6 +82,18 @@ extension Bucket {
     }
 
     static let namesHelp = "today | tomorrow | week | backlog"
+
+    /// Pulls @list tokens out of a (possibly multi-line) title. Last token wins.
+    static func extract(_ raw: String) -> (title: String, bucket: Bucket?) {
+        var found: Bucket?
+        let lines = raw.components(separatedBy: "\n").map { line in
+            line.split(separator: " ", omittingEmptySubsequences: false).filter { w in
+                if let b = Bucket.parse(String(w)) { found = b; return false }
+                return true
+            }.joined(separator: " ")
+        }
+        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), found)
+    }
 }
 
 extension TaskItem {
@@ -143,6 +155,15 @@ enum TaskDB {
         return hits[0]
     }
 
+    static func folderIndex(of ref: String, in actions: [QuickAction]) throws -> Int {
+        let r = ref.lowercased()
+        let folders = actions.indices.filter { actions[$0].isFolder }
+        if let i = folders.filter({ actions[$0].title.lowercased() == r || actions[$0].shortID.hasPrefix(r) }).onlyOne { return i }
+        let hits = folders.filter { actions[$0].title.lowercased().contains(r) }
+        guard hits.count == 1 else { throw DTError(hits.isEmpty ? "no folder matches '\(ref)'" : "'\(ref)' matches several folders") }
+        return hits[0]
+    }
+
     static func actionIndex(of ref: String, in actions: [QuickAction]) throws -> Int {
         let r = ref.lowercased()
         if let i = actions.indices.filter({ actions[$0].shortID.hasPrefix(r) || actions[$0].title.lowercased() == r }).onlyOne { return i }
@@ -155,14 +176,9 @@ enum TaskDB {
 
     /// Title may contain @list tokens; an explicit list wins over tokens.
     static func addTask(_ rawTitle: String, list: Bucket?, subtasks: [String] = []) throws -> TaskItem {
-        var target: Bucket = .today
-        var words: [Substring] = []
-        for w in rawTitle.split(separator: " ") {
-            if let b = Bucket.parse(String(w)) { target = b } else { words.append(w) }
-        }
-        let title = words.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        let (title, token) = Bucket.extract(rawTitle)
         guard !title.isEmpty else { throw DTError("task title is empty") }
-        var t = TaskItem(title: title, bucket: list ?? target)
+        var t = TaskItem(title: title, bucket: list ?? token ?? .today)
         t.subtasks = subtasks.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.map { Subtask(title: $0) }
         let task = t
         try write { $0.tasks.insert(task, at: 0) }
@@ -195,7 +211,7 @@ enum TaskDB {
     }
 
     static func rename(_ ref: String, to title: String) throws -> TaskItem {
-        let t = title.trimmingCharacters(in: .whitespaces)
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { throw DTError("title is empty") }
         return try mutateTask(ref) { $0.title = t }
     }
@@ -235,21 +251,43 @@ enum TaskDB {
         }
     }
 
-    static func addAction(title: String, url: String, icon: String) throws -> QuickAction {
+    static func addAction(title: String, url: String, icon: String, folder: String? = nil) throws -> QuickAction {
         let a = QuickAction(title: title.trimmingCharacters(in: .whitespaces),
                             url: url.trimmingCharacters(in: .whitespaces),
                             icon: icon.isEmpty ? "link" : icon)
         guard !a.title.isEmpty else { throw DTError("action title is empty") }
         guard a.resolvedURL != nil else { throw DTError("invalid url '\(url)'") }
-        guard FA.exists(a.icon) else { throw DTError("unknown Font Awesome icon '\(a.icon)' (use names like 'rocket', 'bug', 'server')") }
-        try write { $0.actions.append(a) }
+        guard FA.exists(a.icon) else { throw DTError("unknown Font Awesome icon '\(a.icon)' (use names like 'rocket', 'github', 'docker')") }
+        try write { d in
+            if let folder {
+                let i = try folderIndex(of: folder, in: d.actions)
+                d.actions[i].children?.append(a)
+            } else {
+                d.actions.append(a)
+            }
+        }
         return a
     }
 
+    static func addFolder(title: String, icon: String) throws -> QuickAction {
+        let f = QuickAction(title: title.trimmingCharacters(in: .whitespaces), url: "",
+                            icon: icon.isEmpty ? "folder" : icon, children: [])
+        guard !f.title.isEmpty else { throw DTError("folder title is empty") }
+        guard FA.exists(f.icon) else { throw DTError("unknown Font Awesome icon '\(f.icon)'") }
+        try write { $0.actions.append(f) }
+        return f
+    }
+
+    /// Removes a top-level action/folder, or a link inside a folder.
     static func deleteAction(_ ref: String) throws -> QuickAction {
         try write { d in
-            let i = try actionIndex(of: ref, in: d.actions)
-            return d.actions.remove(at: i)
+            if let i = try? actionIndex(of: ref, in: d.actions) { return d.actions.remove(at: i) }
+            for f in d.actions.indices where d.actions[f].isFolder {
+                if let j = try? actionIndex(of: ref, in: d.actions[f].children ?? []) {
+                    return d.actions[f].children!.remove(at: j)
+                }
+            }
+            throw DTError("no quick action matches '\(ref)'")
         }
     }
 
@@ -270,7 +308,10 @@ enum TaskDB {
     }
 
     static func json(_ a: QuickAction) -> [String: Any] {
-        ["id": a.shortID, "title": a.title, "url": a.url, "icon": a.icon]
+        if let kids = a.children {
+            return ["id": a.shortID, "title": a.title, "icon": a.icon, "folder": true, "links": kids.map(json)]
+        }
+        return ["id": a.shortID, "title": a.title, "url": a.url, "icon": a.icon]
     }
 
     static func filtered(_ d: AppData, list: Bucket?, includeDone: Bool) -> [TaskItem] {

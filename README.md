@@ -20,12 +20,15 @@ To work on it in Xcode, open `Package.swift`.
 ## Features
 
 - Lists: **Today**, **Tomorrow**, **This Week**, **Backlog**. When the day changes, open Tomorrow tasks move to Today automatically.
-- Quick add prompt. Add `@tomorrow`, `@week`, `@backlog` or `@today` anywhere in the text to choose the list (short forms: `@tom`, `@wk`, `@bl`).
+- Quick add prompt. Type `@` to pick a list from an autocomplete menu (Tab or Enter accepts, arrow keys move), or type `@tomorrow`, `@week`, `@backlog`, `@today` in full.
+- Shift+Enter starts a new line in the quick-add bar, task titles and subtasks.
+- URLs in tasks show as short clickable links (`github.com/…/pull/412`). Click anywhere else on the title to edit the full text.
 - Subtasks with a progress chip. Click the chevron on a task to open them.
 - Animated check with a sound (the sound can be turned off in the sidebar).
-- Quick actions: link buttons with a title, a URL (`https://`, `vscode://`, `file://`, ...) and any Font Awesome Solid icon. Right-click a button to edit, reorder or delete it.
+- Quick actions: link buttons with a title, a URL (`https://`, `vscode://`, `file://`, ...) and a Font Awesome icon. The picker has a "dev" tab of coding icons plus all Solid and Brands icons (GitHub, Docker, AWS, Python...).
+- Folders: a quick-action button that opens a dropdown of links, with "open all". Right-click a button to edit, reorder, delete it, or move it into a folder.
 - Move tasks by dragging them onto a list in the sidebar, or with the hover / right-click menu.
-- Appearance: system, light or dark.
+- Themes: pick a dark theme and a light theme (DevTasks, iTerm, Tokyo Night, Catppuccin, Dracula, One Dark, Nord, Gruvbox, GitHub Light, Solarized Light). Set window opacity, with optional blur, from the palette button in the sidebar or with Cmd , (Settings).
 
 ## Agents and the CLI
 
@@ -94,6 +97,9 @@ claude mcp add --scope user devtasks -- /Applications/DevTasks.app/Contents/MacO
 | Cmd N | Focus quick add |
 | Cmd 1-4 | Today / Tomorrow / This Week / Backlog |
 | Cmd Shift D | Cycle appearance |
+| Cmd , | Themes and opacity |
+| Shift Enter | New line |
+| @ then Tab | Pick a list |
 | Enter | Add task / subtask |
 
 ## Data
@@ -114,4 +120,4 @@ agent/skills/devtasks  Claude Code skill (installed by build.sh --install)
 build.sh               builds + bundles + ad-hoc signs the .app
 ```
 
-Icons: [Font Awesome Free](https://fontawesome.com) 6.5.1 (font under SIL OFL 1.1).
+Icons: [Font Awesome Free](https://fontawesome.com) 6.5.1, Solid + Brands (fonts under SIL OFL 1.1).

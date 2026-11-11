@@ -2,8 +2,11 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.theme) private var t
+    @AppStorage(Prefs.opacity) private var opacity = 1.0
+    @AppStorage(Prefs.blur) private var blur = true
 
     var body: some View {
+        let translucent = opacity < 0.999
         HStack(spacing: 0) {
             SidebarView()
                 .frame(width: 228)
@@ -12,7 +15,14 @@ struct RootView: View {
             MainView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(t.bg)
+        .background {
+            ZStack {
+                if translucent && blur { VisualEffectBackground() }
+                t.bg
+            }
+            .ignoresSafeArea()
+        }
+        .background(WindowTranslucency(translucent: translucent))
         .foregroundStyle(t.text)
         .ignoresSafeArea()
         .frame(minWidth: 780, minHeight: 520)
@@ -27,6 +37,7 @@ struct SidebarView: View {
     @Environment(\.theme) private var t
     @AppStorage("appearance") private var appearance: Appearance = .dark
     @AppStorage("soundOn") private var soundOn = true
+    @State private var showThemes = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -63,6 +74,10 @@ struct SidebarView: View {
                         }
                     }
                     Spacer()
+                    IconToggle(icon: "palette", on: showThemes, help: "themes and opacity") { showThemes.toggle() }
+                        .popover(isPresented: $showThemes, arrowEdge: .top) {
+                            ThemeProvider(translucent: false) { ThemeSettingsPopover() }
+                        }
                     IconToggle(icon: soundOn ? "volume-high" : "volume-xmark", on: soundOn, help: "check sound") {
                         soundOn.toggle()
                     }
@@ -191,4 +206,9 @@ struct HoverIconButton: View {
         .onHover { hover = $0 }
         .help(help)
     }
+}
+
+private struct ThemeSettingsPopover: View {
+    @Environment(\.theme) private var t
+    var body: some View { ThemeSettings().background(t.panel) }
 }

@@ -23,7 +23,7 @@ struct TaskRow: View {
     @State private var hover = false
     @State private var showMove = false
     @State private var newSub = ""
-    @FocusState private var subFocused: Bool
+    @StateObject private var subCtl = FieldController()
 
     init(task: TaskItem) { self.task = task }
 
@@ -33,27 +33,29 @@ struct TaskRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
+            HStack(alignment: .top, spacing: 11) {
                 FAIcon("grip-vertical", size: 10)
                     .foregroundStyle(t.faint)
                     .opacity(hover && !checked ? 1 : 0)
                     .frame(width: 8)
+                    .padding(.top, 3)
 
                 CheckBox(checked: checked, size: 18, action: toggle)
 
-                if checked {
-                    Text(task.title)
-                        .font(.mono(13))
-                        .foregroundStyle(t.muted)
-                        .strikethrough(true, color: t.muted)
-                        .lineLimit(1)
-                } else {
-                    TextField("", text: store.titleBinding(task.id))
-                        .textFieldStyle(.plain)
-                        .font(.mono(13))
+                Group {
+                    if checked {
+                        Text(LinkFormat.plain(task.title))
+                            .font(.mono(13))
+                            .lineSpacing(2)
+                            .foregroundStyle(t.muted)
+                            .strikethrough(true, color: t.muted)
+                            .lineLimit(4)
+                    } else {
+                        RichField(text: store.titleBinding(task.id), size: 13, color: t.text, accent: t.accent, inline: true)
+                    }
                 }
-
-                Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 1)
 
                 if !task.subtasks.isEmpty {
                     SubtaskChip(done: subDone, total: task.subtasks.count)
@@ -67,13 +69,15 @@ struct TaskRow: View {
                     }
                 }
                 .opacity(hover || showMove ? 1 : 0)
+                .padding(.top, -2)
 
                 HoverIconButton(icon: "chevron-down", size: 10, help: "subtasks") {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { expanded.toggle() }
-                    if expanded { subFocused = true }
+                    if expanded { subCtl.focus() }
                 }
                 .rotationEffect(.degrees(expanded ? 180 : 0))
                 .opacity(hover || expanded || !task.subtasks.isEmpty ? 1 : 0)
+                .padding(.top, -2)
             }
             .padding(.leading, 6)
             .padding(.trailing, 10)
@@ -84,17 +88,18 @@ struct TaskRow: View {
                     ForEach(task.subtasks) { sub in
                         SubtaskRow(taskID: task.id, sub: sub)
                     }
-                    HStack(spacing: 10) {
-                        FAIcon("plus", size: 10).foregroundStyle(t.faint).frame(width: 14)
-                        TextField("", text: $newSub, prompt: Text("add subtask").foregroundStyle(t.faint))
-                            .textFieldStyle(.plain)
-                            .font(.mono(12))
-                            .focused($subFocused)
-                            .onSubmit {
-                                withAnimation(.spring(response: 0.3)) { store.addSubtask(task.id, newSub) }
-                                newSub = ""
-                                subFocused = true
+                    HStack(alignment: .top, spacing: 10) {
+                        FAIcon("plus", size: 10).foregroundStyle(t.faint).frame(width: 14).padding(.top, 2)
+                        RichField(text: $newSub, size: 12, color: t.text, accent: t.accent,
+                                  controller: subCtl, endsOnSubmit: false, onSubmit: {
+                            withAnimation(.spring(response: 0.3)) { store.addSubtask(task.id, newSub) }
+                            newSub = ""
+                        })
+                        .overlay(alignment: .topLeading) {
+                            if newSub.isEmpty {
+                                Text("add subtask").font(.mono(12)).foregroundStyle(t.faint).allowsHitTesting(false)
                             }
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -130,7 +135,7 @@ struct TaskRow: View {
             Button(checked ? "Mark Open" : "Complete") { toggle() }
             Button("Add Subtask") {
                 withAnimation(.spring(response: 0.3)) { expanded = true }
-                subFocused = true
+                subCtl.focus()
             }
             Menu("Move To") {
                 ForEach(Bucket.allCases.filter { $0 != task.bucket }) { b in
@@ -185,19 +190,20 @@ struct SubtaskRow: View {
     @State private var hover = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             CheckBox(checked: sub.done, size: 14) {
                 if !sub.done { Feedback.check() }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { store.toggleSubtask(taskID, sub.id) }
             }
-            if sub.done {
-                Text(sub.title).font(.mono(12)).foregroundStyle(t.muted).strikethrough(true, color: t.muted)
-            } else {
-                TextField("", text: store.subtaskBinding(taskID, sub.id))
-                    .textFieldStyle(.plain)
-                    .font(.mono(12))
+            Group {
+                if sub.done {
+                    Text(LinkFormat.plain(sub.title)).font(.mono(12)).lineSpacing(2)
+                        .foregroundStyle(t.muted).strikethrough(true, color: t.muted)
+                } else {
+                    RichField(text: store.subtaskBinding(taskID, sub.id), size: 12, color: t.text, accent: t.accent, inline: true)
+                }
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
             HoverIconButton(icon: "xmark", size: 9, hoverColor: t.danger, help: "remove subtask") {
                 withAnimation(.spring(response: 0.3)) { store.deleteSubtask(taskID, sub.id) }
             }

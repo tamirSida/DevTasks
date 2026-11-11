@@ -99,7 +99,10 @@ enum MCPServer {
         case "list_quick_actions":
             return try TaskDB.read().actions.map(TaskDB.json)
         case "add_quick_action":
-            return TaskDB.json(try TaskDB.addAction(title: try str(a, "title"), url: try str(a, "url"), icon: a["icon"] as? String ?? "link"))
+            return TaskDB.json(try TaskDB.addAction(title: try str(a, "title"), url: try str(a, "url"),
+                                                    icon: a["icon"] as? String ?? "link", folder: a["folder"] as? String))
+        case "add_quick_action_folder":
+            return TaskDB.json(try TaskDB.addFolder(title: try str(a, "title"), icon: a["icon"] as? String ?? "folder"))
         case "delete_quick_action":
             return TaskDB.json(try TaskDB.deleteAction(try str(a, "action")))
         default:
@@ -138,7 +141,7 @@ enum MCPServer {
             tool("list_tasks", "List tasks. Open tasks only unless include_done is true.",
                  ["list": listEnum.merging(["description": "Filter to one list; omit for all"]) { $1 },
                   "include_done": ["type": "boolean"]], readOnly: true),
-            tool("add_task", "Add a task. Defaults to today.",
+            tool("add_task", "Add a task. Defaults to today. Titles may contain line breaks and URLs (shown as clickable links).",
                  ["title": ["type": "string"],
                   "list": listEnum,
                   "subtasks": ["type": "array", "items": ["type": "string"]]], ["title"]),
@@ -157,9 +160,12 @@ enum MCPServer {
             tool("add_quick_action", "Add a quick-action link button to the app.",
                  ["title": ["type": "string"],
                   "url": ["type": "string", "description": "https://, vscode://, file://, ..."],
-                  "icon": ["type": "string", "description": "Font Awesome Solid icon name without the fa- prefix, e.g. rocket, bug, server"]],
+                  "icon": ["type": "string", "description": "Font Awesome icon name without the fa- prefix (solid or brands), e.g. rocket, bug, github, docker"],
+                  "folder": ["type": "string", "description": "Optional folder title/id to put the link inside"]],
                  ["title", "url"]),
-            tool("delete_quick_action", "Remove a quick-action button.",
+            tool("add_quick_action_folder", "Add a folder: a quick-action button that opens a dropdown of links.",
+                 ["title": ["type": "string"], "icon": ["type": "string"]], ["title"]),
+            tool("delete_quick_action", "Remove a quick-action button, folder, or a link inside a folder.",
                  ["action": ["type": "string", "description": "Action id or title"]], ["action"]),
         ]
     }

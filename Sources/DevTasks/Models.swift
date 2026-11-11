@@ -90,6 +90,10 @@ struct QuickAction: Identifiable, Codable, Equatable {
     var title: String
     var url: String
     var icon: String
+    /// Non-nil makes this a folder: a dropdown of links.
+    var children: [QuickAction]? = nil
+
+    var isFolder: Bool { children != nil }
 
     static let defaults: [QuickAction] = [
         QuickAction(title: "GitHub", url: "https://github.com", icon: "code-branch"),

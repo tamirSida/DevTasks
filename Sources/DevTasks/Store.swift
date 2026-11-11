@@ -164,6 +164,13 @@ final class Store: ObservableObject {
 
     func deleteAction(_ id: UUID) { actions.removeAll { $0.id == id } }
 
+    func moveAction(_ id: UUID, intoFolder folderID: UUID) {
+        guard let i = actions.firstIndex(where: { $0.id == id }), !actions[i].isFolder else { return }
+        let a = actions.remove(at: i)
+        guard let f = actions.firstIndex(where: { $0.id == folderID }) else { actions.insert(a, at: i); return }
+        actions[f].children?.append(a)
+    }
+
     func moveAction(_ id: UUID, by offset: Int) {
         guard let i = actions.firstIndex(where: { $0.id == id }) else { return }
         let j = i + offset

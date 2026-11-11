@@ -23,7 +23,10 @@ enum CLI {
         func has(_ names: String...) -> Bool { names.contains { flags.contains($0) } }
     }
 
-    static let valueOptions: Set<String> = ["--list", "-l", "--sub", "-s", "--icon", "-i"]
+    static let valueOptions: Set<String> = ["--list", "-l", "--sub", "-s", "--icon", "-i", "--in"]
+
+    /// Lets shell users type \n for a line break.
+    static func unescape(_ s: String) -> String { s.replacingOccurrences(of: "\\n", with: "\n") }
 
     static func parse(_ raw: [String]) -> Args {
         var a = Args()
@@ -66,8 +69,8 @@ enum CLI {
 
             case "add":
                 guard !a.positional.isEmpty else { throw DTError("usage: devtasks add <title> [@list | --list <list>] [--sub <title>]...") }
-                let t = try TaskDB.addTask(a.positional.joined(separator: " "), list: try bucket(a.value("--list", "-l")),
-                                           subtasks: a.all("--sub", "-s"))
+                let t = try TaskDB.addTask(unescape(a.positional.joined(separator: " ")), list: try bucket(a.value("--list", "-l")),
+                                           subtasks: a.all("--sub", "-s").map(unescape))
                 emit(t, json, verb: "added")
 
             case "list", "ls":
@@ -94,7 +97,7 @@ enum CLI {
 
             case "edit", "rename":
                 guard a.positional.count >= 2 else { throw DTError("usage: devtasks edit <task> <new title>") }
-                emit(try TaskDB.rename(a.positional[0], to: a.positional.dropFirst().joined(separator: " ")), json, verb: "renamed")
+                emit(try TaskDB.rename(a.positional[0], to: unescape(a.positional.dropFirst().joined(separator: " "))), json, verb: "renamed")
 
             case "clear":
                 let n = try TaskDB.clearDone(try bucket(a.positional.first == "all" ? nil : a.positional.first))
@@ -131,7 +134,7 @@ enum CLI {
         guard p.count >= 3 else { throw DTError("usage: devtasks sub add|done|undo|rm <task> <subtask title | n>") }
         let rest = p.dropFirst(2).joined(separator: " ")
         switch p[0] {
-        case "add": emit(try TaskDB.addSubtask(p[1], rest), json, verb: "subtask added to")
+        case "add": emit(try TaskDB.addSubtask(p[1], unescape(rest)), json, verb: "subtask added to")
         case "done": emit(try TaskDB.setSubtaskDone(p[1], rest, true), json, verb: "subtask done in")
         case "undo", "reopen": emit(try TaskDB.setSubtaskDone(p[1], rest, false), json, verb: "subtask reopened in")
         case "rm", "delete": emit(try TaskDB.deleteSubtask(p[1], rest), json, verb: "subtask removed from")
@@ -146,17 +149,27 @@ enum CLI {
             let acts = try TaskDB.read().actions
             if json { print(TaskDB.jsonString(acts.map(TaskDB.json))); return }
             if acts.isEmpty { print("no quick actions") }
-            for x in acts { print("\(x.shortID)  \(x.title.padding(toLength: 22, withPad: " ", startingAt: 0)) fa-\(x.icon.padding(toLength: 18, withPad: " ", startingAt: 0)) \(x.url)") }
+            func row(_ x: QuickAction, _ indent: String) -> String {
+                "\(indent)\(x.shortID)  \(x.title.padding(toLength: 22, withPad: " ", startingAt: 0)) fa-\(x.icon.padding(toLength: 18, withPad: " ", startingAt: 0)) \(x.isFolder ? "(folder)" : x.url)"
+            }
+            for x in acts {
+                print(row(x, ""))
+                for c in x.children ?? [] { print(row(c, "  - ")) }
+            }
         case "add":
-            guard p.count >= 3 else { throw DTError("usage: devtasks action add <title> <url> [--icon name]") }
-            let x = try TaskDB.addAction(title: p[1], url: p[2], icon: a.value("--icon", "-i") ?? "link")
+            guard p.count >= 3 else { throw DTError("usage: devtasks action add <title> <url> [--icon name] [--in <folder>]") }
+            let x = try TaskDB.addAction(title: p[1], url: p[2], icon: a.value("--icon", "-i") ?? "link", folder: a.value("--in"))
             print(json ? TaskDB.jsonString(TaskDB.json(x)) : "added action \(x.shortID)  \(x.title)")
+        case "folder":
+            guard p.count >= 2 else { throw DTError("usage: devtasks action folder <title> [--icon name]") }
+            let x = try TaskDB.addFolder(title: p.dropFirst().joined(separator: " "), icon: a.value("--icon", "-i") ?? "folder")
+            print(json ? TaskDB.jsonString(TaskDB.json(x)) : "added folder \(x.shortID)  \(x.title)")
         case "rm", "delete":
             guard p.count >= 2 else { throw DTError("usage: devtasks action rm <action>") }
             let x = try TaskDB.deleteAction(p.dropFirst().joined(separator: " "))
             print(json ? TaskDB.jsonString(TaskDB.json(x)) : "deleted action \(x.title)")
         default:
-            throw DTError("usage: devtasks action [list | add <title> <url> --icon <name> | rm <action>]")
+            throw DTError("usage: devtasks action [list | add <title> <url> [--icon <name>] [--in <folder>] | folder <title> | rm <action>]")
         }
     }
 
@@ -168,7 +181,7 @@ enum CLI {
     }
 
     private static func line(_ t: TaskItem) -> String {
-        var s = "  \(t.done ? "[x]" : "[ ]") \(t.shortID)  \(t.title)"
+        var s = "  \(t.done ? "[x]" : "[ ]") \(t.shortID)  \(t.title.replacingOccurrences(of: "\n", with: "\n" + String(repeating: " ", count: 14)))"
         if !t.subtasks.isEmpty { s += "  (\(t.subtasks.filter(\.done).count)/\(t.subtasks.count))" }
         for (n, sub) in t.subtasks.enumerated() { s += "\n           \(n + 1). \(sub.done ? "[x]" : "[ ]") \(sub.title)" }
         return s
@@ -210,7 +223,8 @@ enum CLI {
 
     quick actions
       devtasks action list
-      devtasks action add <title> <url> [--icon <font-awesome-name>]
+      devtasks action add <title> <url> [--icon <font-awesome-name>] [--in <folder>]
+      devtasks action folder <title> [--icon <name>]      a dropdown of links
       devtasks action rm <action>
 
     other
@@ -218,6 +232,7 @@ enum CLI {
       devtasks path                    print the data file location
 
     <task> is an id prefix from `list` (e.g. a1b2c3) or any unique part of the title.
+    Use \\n in titles for a line break. URLs in titles become clickable links in the app.
     Add --json to any command for machine-readable output.
     """
 }

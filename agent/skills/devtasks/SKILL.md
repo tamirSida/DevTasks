@@ -39,6 +39,8 @@ devtasks sub rm   <task> <n|title>
 
 devtasks action list
 devtasks action add "Grafana" https://grafana.example.com --icon chart-line
+devtasks action folder "Dashboards" --icon gauge-high           # a dropdown of links
+devtasks action add "Sentry" https://sentry.io --icon bug --in Dashboards
 devtasks action rm <action>
 ```
 
@@ -48,6 +50,8 @@ Add `--json` to any command to get JSON back (errors become `{"error": "..."}` w
 
 - Use `devtasks list --json` before changing tasks so you reference real ids.
 - Keep titles short and imperative ("fix token refresh race"). Put steps in subtasks, not in the title.
+- Titles can span lines: use `\n` in the CLI (`devtasks add 'deploy\nrun migrations first'`).
+- Put URLs straight into titles (PRs, tickets, docs). The app shows them as short clickable links.
 - Don't `rm` or `clear` unless the user asked to delete. Completing a task (`done`) is the normal path.
-- Quick-action icons are Font Awesome 6 Solid names without the `fa-` prefix (rocket, bug, server, code-branch, terminal, book, chart-line). Unknown names are rejected.
+- Quick-action icons are Font Awesome 6 names without the `fa-` prefix, Solid or Brands: rocket, bug, server, terminal, chart-line, github, gitlab, docker, aws, python, slack, jira, figma. Unknown names are rejected.
 - After making changes, tell the user briefly what you added, moved or checked off.

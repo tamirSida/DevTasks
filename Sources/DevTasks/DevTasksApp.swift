@@ -44,5 +44,14 @@ struct DevTasksApp: App {
                     .keyboardShortcut("d", modifiers: [.command, .shift])
             }
         }
+
+        Settings {
+            ThemeProvider(translucent: false) { SettingsRoot() }
+        }
     }
+}
+
+private struct SettingsRoot: View {
+    @Environment(\.theme) private var t
+    var body: some View { ThemeSettings().background(t.panel) }
 }

@@ -20,6 +20,7 @@ struct MainView: View {
                 .padding(.top, 22)
 
             QuickAddBar()
+                .zIndex(10)
                 .padding(.horizontal, 28)
                 .padding(.top, 16)
                 .padding(.bottom, 12)
@@ -152,24 +153,43 @@ struct EmptyState: View {
 struct QuickAddBar: View {
     @EnvironmentObject private var store: Store
     @Environment(\.theme) private var t
+    @StateObject private var ctl = FieldController()
     @State private var text = ""
     @State private var routed: Bucket?
-    @FocusState private var focused: Bool
+    @State private var focused = false
+
+    /// Lists matching the @word under the cursor. Hidden once a full name is typed.
+    private var suggestions: [String] {
+        guard focused, let tok = ctl.token?.lowercased() else { return [] }
+        let all = Bucket.allCases.map { "@" + $0.rawValue }
+        if all.contains(tok) { return [] }
+        return all.filter { $0.hasPrefix(tok) }
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
+        let preview = Bucket.extract(text).bucket
+        HStack(alignment: .top, spacing: 10) {
             Text(">").font(.mono(14, .bold)).foregroundStyle(t.accent)
-            TextField("", text: $text, prompt: Text("add a task   @tomorrow  @week  @backlog").foregroundStyle(t.faint))
-                .textFieldStyle(.plain)
-                .font(.mono(13))
-                .focused($focused)
-                .onSubmit(submit)
-            if let routed {
+            RichField(text: $text, size: 13, color: t.text, accent: t.accent,
+                      controller: ctl, suggestions: suggestions, endsOnSubmit: false,
+                      onSubmit: submit, onFocus: { f in withAnimation(.easeOut(duration: 0.15)) { focused = f } })
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 1)
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("add a task    @ picks a list    shift+enter new line")
+                            .font(.mono(13)).foregroundStyle(t.faint).lineLimit(1)
+                            .padding(.top, 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+            if let shown = routed ?? (preview != store.selected ? preview : nil) {
                 HStack(spacing: 5) {
                     FAIcon("arrow-right", size: 9)
-                    Text(routed.path).font(.mono(11))
+                    Text(shown.path).font(.mono(11))
                 }
-                .foregroundStyle(t.tint(routed))
+                .foregroundStyle(t.tint(shown))
+                .padding(.top, 2)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if !text.isEmpty {
                 Text("enter").font(.mono(10)).foregroundStyle(t.faint)
@@ -177,34 +197,72 @@ struct QuickAddBar: View {
                     .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(t.border))
             }
         }
+        .animation(.spring(response: 0.3), value: preview)
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(RoundedRectangle(cornerRadius: 9).fill(t.panel))
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(focused ? t.accent.opacity(0.55) : t.border, lineWidth: 1))
         .shadow(color: focused ? t.accent.opacity(0.12) : .clear, radius: 8)
-        .animation(.easeOut(duration: 0.15), value: focused)
-        .onAppear { focused = true }
-        .onChange(of: store.focusQuickAdd) { _, _ in focused = true }
+        .overlay(alignment: .bottomLeading) {
+            if !suggestions.isEmpty {
+                ListSuggestions(items: suggestions, selected: ctl.selected) { ctl.complete($0) }
+                    .alignmentGuide(.bottom) { d in d[.top] - 6 }
+                    .padding(.leading, 30)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: suggestions)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { ctl.focus() }
+        }
+        .onChange(of: store.focusQuickAdd) { _, _ in ctl.focus() }
     }
 
     private func submit() {
-        var target = store.selected
-        var words: [Substring] = []
-        for w in text.split(separator: " ") {
-            if let b = Bucket.parse(String(w)) { target = b } else { words.append(w) }
-        }
-        let title = words.joined(separator: " ")
+        let (title, token) = Bucket.extract(text)
+        let target = token ?? store.selected
         let added = withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             store.add(title, to: target)
         }
         guard added else { return }
         text = ""
-        focused = true
         if target != store.selected {
             withAnimation(.spring(response: 0.3)) { routed = target }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
                 withAnimation(.easeOut(duration: 0.25)) { routed = nil }
             }
         }
+    }
+}
+
+struct ListSuggestions: View {
+    @Environment(\.theme) private var t
+    let items: [String]
+    let selected: Int
+    let pick: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(items.enumerated()), id: \.element) { i, item in
+                let b = Bucket(rawValue: String(item.dropFirst()))
+                let on = i == min(selected, items.count - 1)
+                Button { pick(item) } label: {
+                    HStack(spacing: 10) {
+                        if let b { FAIcon(b.icon, size: 11).foregroundStyle(t.tint(b)).frame(width: 16) }
+                        Text(item).font(.mono(12, on ? .semibold : .regular)).foregroundStyle(on ? t.text : t.muted)
+                        Spacer(minLength: 16)
+                        if on { Text("tab").font(.mono(9.5)).foregroundStyle(t.faint) }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(on ? t.raised : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(5)
+        .frame(width: 220)
+        .background(RoundedRectangle(cornerRadius: 9).fill(t.panel).shadow(color: .black.opacity(0.3), radius: 12, y: 4))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(t.border))
     }
 }
