@@ -19,12 +19,16 @@ To work on it in Xcode, open `Package.swift`.
 
 ## Features
 
-- Lists: **Today**, **Tomorrow**, **This Week**, **Backlog**. When the day changes, open Tomorrow tasks move to Today automatically.
+- Lists: **Today**, **Tomorrow**, **This Week**, **Backlog**, plus your own (sidebar "+ new list"; right-click to rename, change icon or delete). When the day changes, open Tomorrow tasks move to Today automatically.
+- Scratchpad notes (sidebar, Cmd 5, new note Cmd Shift N) with clickable links.
+- Rich paste: copy a work item title in Azure DevOps (or a link from Teams/Slack/a browser) and paste it; the link stays embedded. The copy button on a task puts it back on the clipboard with the link, ready for chats.
+- Prompts: a quick-action button holding named snippets; click one to copy it. Notes can be saved to it with one click.
 - Quick add prompt. Type `@` to pick a list from an autocomplete menu (Tab or Enter accepts, arrow keys move), or type `@tomorrow`, `@week`, `@backlog`, `@today` in full.
 - Shift+Enter starts a new line in the quick-add bar, task titles and subtasks.
 - URLs in tasks show as short clickable links (`github.com/…/pull/412`). Click anywhere else on the title to edit the full text.
 - Subtasks with a progress chip. Click the chevron on a task to open them.
-- Animated check with a sound (the sound can be turned off in the sidebar).
+- Animated check with a sound (the sound can be turned off in the sidebar). Links on completed tasks stay clickable.
+- Text size S / M / L / XL in the theme settings (handy on large 1440p screens).
 - Quick actions: link buttons with a title, a URL (`https://`, `vscode://`, `file://`, ...) and a Font Awesome icon. The picker has a "dev" tab of coding icons plus all Solid and Brands icons (GitHub, Docker, AWS, Python...).
 - Folders: a quick-action button that opens a dropdown of links, with "open all". Right-click a button to edit, reorder, delete it, or move it into a folder.
 - Move tasks by dragging them onto a list in the sidebar, or with the hover / right-click menu.

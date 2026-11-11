@@ -118,6 +118,8 @@ struct Header: View {
             return "\(f.string(from: w.start)) - \(f.string(from: w.end.addingTimeInterval(-1)))"
         case .backlog:
             return "someday / maybe"
+        default:
+            return "custom list"
         }
     }
 

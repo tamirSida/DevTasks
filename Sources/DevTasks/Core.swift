@@ -37,7 +37,11 @@ enum DataFile {
     static func load() throws -> AppData {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         guard let raw = try? Data(contentsOf: url) else { return AppData() }
-        do { return try decoder.decode(AppData.self, from: raw) } catch {
+        do {
+            var d = try decoder.decode(AppData.self, from: raw)
+            d.normalize()
+            return d
+        } catch {
             throw DTError("could not parse \(url.path): \(error.localizedDescription)")
         }
     }
@@ -60,6 +64,12 @@ enum DataFile {
 }
 
 extension AppData {
+    /// Publishes custom lists to the registry and rescues tasks whose list no longer exists.
+    mutating func normalize() {
+        ListRegistry.custom = lists
+        for i in tasks.indices where !tasks[i].bucket.exists { tasks[i].bucket = .backlog }
+    }
+
     /// On a new day, open "tomorrow" tasks become "today" tasks. Returns true if anything changed.
     @discardableResult
     mutating func rollover(now: Date = Date()) -> Bool {
@@ -77,11 +87,13 @@ extension Bucket {
     /// Accepts "today", "@today", "tom", "this-week", "week", "bl", ...
     static func named(_ raw: String) -> Bucket? {
         let s = raw.lowercased().trimmingCharacters(in: .whitespaces)
-        let tok = s.hasPrefix("@") ? s : "@" + s.replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: "")
-        return Bucket.parse(tok)
+        let bare = s.hasPrefix("@") ? String(s.dropFirst()) : s
+        return Bucket.parse("@" + bare)
+            ?? Bucket.parse("@" + CustomList.slug(bare))
+            ?? Bucket.parse("@" + bare.replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: ""))
     }
 
-    static let namesHelp = "today | tomorrow | week | backlog"
+    static var namesHelp: String { allCases.map(\.rawValue).joined(separator: " | ") }
 
     /// Pulls @list tokens out of a (possibly multi-line) title. Last token wins.
     static func extract(_ raw: String) -> (title: String, bucket: Bucket?) {
@@ -291,6 +303,111 @@ enum TaskDB {
         }
     }
 
+    // MARK: lists
+
+    static func addList(_ name: String, icon: String = "list-ul") throws -> CustomList {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { throw DTError("list name is empty") }
+        guard FA.exists(icon) else { throw DTError("unknown Font Awesome icon '\(icon)'") }
+        return try write { d in
+            let l = CustomList(id: uniqueSlug(n, d.lists), name: n, icon: icon)
+            d.lists.append(l)
+            d.normalize()
+            return l
+        }
+    }
+
+    static func uniqueSlug(_ name: String, _ lists: [CustomList]) -> String {
+        var base = CustomList.slug(name)
+        if base.isEmpty { base = "list" }
+        let taken = Set(lists.map(\.id) + Bucket.builtins.map(\.rawValue) + ["this-week", "all"])
+        var s = base
+        var n = 2
+        while taken.contains(s) { s = "\(base)-\(n)"; n += 1 }
+        return s
+    }
+
+    static func customIndex(_ ref: String, _ lists: [CustomList]) throws -> Int {
+        let r = ref.lowercased().trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "@", with: "")
+        if let i = lists.firstIndex(where: { $0.id == r || $0.name.lowercased() == r }) { return i }
+        let hits = lists.indices.filter { lists[$0].name.lowercased().contains(r) }
+        guard hits.count == 1 else { throw DTError(hits.isEmpty ? "no custom list matches '\(ref)'" : "'\(ref)' matches several lists") }
+        return hits[0]
+    }
+
+    /// Deletes a custom list; its tasks move to the backlog.
+    static func deleteList(_ ref: String) throws -> (CustomList, Int) {
+        try write { d in
+            let i = try customIndex(ref, d.lists)
+            let l = d.lists.remove(at: i)
+            var moved = 0
+            for j in d.tasks.indices where d.tasks[j].bucket.rawValue == l.id { d.tasks[j].bucket = .backlog; moved += 1 }
+            d.normalize()
+            return (l, moved)
+        }
+    }
+
+    static func renameList(_ ref: String, to name: String) throws -> CustomList {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { throw DTError("list name is empty") }
+        return try write { d in
+            let i = try customIndex(ref, d.lists)
+            d.lists[i].name = n
+            d.normalize()
+            return d.lists[i]
+        }
+    }
+
+    // MARK: prompts (snippet collections on the quick-action bar)
+
+    static func promptCollectionIndex(_ ref: String?, in d: inout AppData, create: Bool) throws -> Int {
+        let cols = d.actions.indices.filter { d.actions[$0].isSnippets }
+        if let ref, !ref.isEmpty {
+            let r = ref.lowercased()
+            if let i = cols.filter({ d.actions[$0].title.lowercased() == r || d.actions[$0].shortID.hasPrefix(r) }).onlyOne { return i }
+            if let i = cols.filter({ d.actions[$0].title.lowercased().contains(r) }).onlyOne { return i }
+            guard create else { throw DTError("no prompts button matches '\(ref)'") }
+            d.actions.append(QuickAction(title: ref, url: "", icon: "wand-magic-sparkles", snippets: []))
+            return d.actions.count - 1
+        }
+        if let first = cols.first { return first }
+        guard create else { throw DTError("no prompts button yet") }
+        d.actions.append(QuickAction(title: "Prompts", url: "", icon: "wand-magic-sparkles", snippets: []))
+        return d.actions.count - 1
+    }
+
+    /// Adds a prompt to a prompts button (created as "Prompts" if there is none).
+    static func addPrompt(title: String, text: String, collection: String?) throws -> (Snippet, String) {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw DTError("prompt text is empty") }
+        var name = title.trimmingCharacters(in: .whitespaces)
+        if name.isEmpty { name = String(body.split(separator: "\n").first ?? "prompt").prefix(40).description }
+        let snip = Snippet(title: name, text: body)
+        let colName: String = try write { d in
+            let i = try promptCollectionIndex(collection, in: &d, create: true)
+            d.actions[i].snippets?.append(snip)
+            return d.actions[i].title
+        }
+        return (snip, colName)
+    }
+
+    static func allPrompts(_ d: AppData) -> [(collection: String, snippet: Snippet)] {
+        d.actions.filter(\.isSnippets).flatMap { a in (a.snippets ?? []).map { (a.title, $0) } }
+    }
+
+    static func findPrompt(_ ref: String, in d: AppData) throws -> Snippet {
+        let all = allPrompts(d).map(\.snippet)
+        let r = ref.lowercased()
+        if let s = all.filter({ $0.shortID.hasPrefix(r) || $0.title.lowercased() == r }).onlyOne { return s }
+        let hits = all.filter { $0.title.lowercased().contains(r) }
+        guard hits.count == 1 else { throw DTError(hits.isEmpty ? "no prompt matches '\(ref)'" : "'\(ref)' matches \(hits.count) prompts") }
+        return hits[0]
+    }
+
+    static func json(_ s: Snippet, collection: String) -> [String: Any] {
+        ["id": s.shortID, "title": s.title, "text": s.text, "collection": collection]
+    }
+
     // MARK: notes
 
     static func noteIndex(of ref: String, in notes: [Note]) throws -> Int {
@@ -348,6 +465,9 @@ enum TaskDB {
     }
 
     static func json(_ a: QuickAction) -> [String: Any] {
+        if let snips = a.snippets {
+            return ["id": a.shortID, "title": a.title, "icon": a.icon, "prompts": snips.map { json($0, collection: a.title) }]
+        }
         if let kids = a.children {
             return ["id": a.shortID, "title": a.title, "icon": a.icon, "folder": true, "links": kids.map(json)]
         }

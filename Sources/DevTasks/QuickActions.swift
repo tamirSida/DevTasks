@@ -11,11 +11,13 @@ struct QuickActionsBar: View {
             HStack(spacing: 8) {
                 ForEach(store.actions) { a in
                     Group {
-                        if a.isFolder { FolderChip(folder: a, edit: { editing = a }) } else { ActionChip(action: a) }
+                        if a.isSnippets { PromptsChip(collection: a, edit: { editing = a }) }
+                        else if a.isFolder { FolderChip(folder: a, edit: { editing = a }) }
+                        else { ActionChip(action: a) }
                     }
                     .contextMenu {
                         Button("Edit") { editing = a }
-                        if !a.isFolder {
+                        if !a.isFolder && !a.isSnippets {
                             let folders = store.actions.filter(\.isFolder)
                             if !folders.isEmpty {
                                 Menu("Move Into Folder") {
@@ -33,7 +35,8 @@ struct QuickActionsBar: View {
                 }
                 AddChip(
                     newLink: { editing = QuickAction(title: "", url: "", icon: "link") },
-                    newFolder: { editing = QuickAction(title: "", url: "", icon: "folder", children: [QuickAction(title: "", url: "", icon: "link")]) }
+                    newFolder: { editing = QuickAction(title: "", url: "", icon: "folder", children: [QuickAction(title: "", url: "", icon: "link")]) },
+                    newPrompts: { editing = QuickAction(title: "Prompts", url: "", icon: "wand-magic-sparkles", snippets: [Snippet(title: "", text: "")]) }
                 )
             }
             .padding(.vertical, 4)
@@ -172,6 +175,7 @@ struct AddChip: View {
     @Environment(\.theme) private var t
     let newLink: () -> Void
     let newFolder: () -> Void
+    let newPrompts: () -> Void
     @State private var hover = false
     @State private var show = false
 
@@ -193,7 +197,8 @@ struct AddChip: View {
         .help("add a link or a folder of links")
         .popover(isPresented: $show, arrowEdge: .bottom) {
             ThemeProvider(translucent: false) {
-                AddMenu(pickLink: { show = false; newLink() }, pickFolder: { show = false; newFolder() })
+                AddMenu(pickLink: { show = false; newLink() }, pickFolder: { show = false; newFolder() },
+                        pickPrompts: { show = false; newPrompts() })
             }
         }
     }
@@ -203,11 +208,13 @@ private struct AddMenu: View {
     @Environment(\.theme) private var t
     let pickLink: () -> Void
     let pickFolder: () -> Void
+    let pickPrompts: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             row("link", "link", "a button that opens a url", pickLink)
             row("folder-open", "folder", "a dropdown of links", pickFolder)
+            row("wand-magic-sparkles", "prompts", "named text snippets; click to copy", pickPrompts)
         }
         .padding(6)
         .frame(width: 230)
@@ -253,6 +260,12 @@ struct ActionEditor: View {
     }
 
     private var isFolder: Bool { draft.isFolder }
+    private var isSnippets: Bool { draft.isSnippets }
+    private var kindName: String { isSnippets ? "prompts" : isFolder ? "folder" : "quick action" }
+
+    private var cleanedSnippets: [Snippet] {
+        (draft.snippets ?? []).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
 
     private var cleanedChildren: [QuickAction] {
         (draft.children ?? []).filter { !$0.url.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -260,6 +273,7 @@ struct ActionEditor: View {
 
     private var valid: Bool {
         guard !draft.title.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        if isSnippets { return true }
         if isFolder { return cleanedChildren.allSatisfy { $0.resolvedURL != nil } }
         return draft.resolvedURL != nil
     }
@@ -291,15 +305,18 @@ struct ActionEditor: View {
                     .frame(width: 34, height: 34)
                     .background(RoundedRectangle(cornerRadius: 8).fill(t.accent))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(isNew ? "new" : "edit") \(isFolder ? "folder" : "quick action")").font(.mono(14, .bold))
-                    Text(isFolder ? "a button that opens a dropdown of links" : "a button that opens a link, app url or file")
+                    Text("\(isNew ? "new" : "edit") \(kindName)").font(.mono(14, .bold))
+                    Text(isSnippets ? "a dropdown of named prompts; clicking one copies it"
+                         : isFolder ? "a button that opens a dropdown of links" : "a button that opens a link, app url or file")
                         .font(.mono(11)).foregroundStyle(t.muted)
                 }
             }
 
-            Field(label: "title", text: $draft.title, prompt: isFolder ? "Dashboards" : "Jira board")
+            Field(label: "title", text: $draft.title, prompt: isSnippets ? "Prompts" : isFolder ? "Dashboards" : "Jira board")
 
-            if isFolder {
+            if isSnippets {
+                snippetsEditor
+            } else if isFolder {
                 linksEditor
             } else {
                 Field(label: "url", text: $draft.url, prompt: "https://...  vscode://...  file:///...")
@@ -344,6 +361,15 @@ struct ActionEditor: View {
     private func save() {
         draft.title = draft.title.trimmingCharacters(in: .whitespaces)
         draft.url = draft.url.trimmingCharacters(in: .whitespaces)
+        if isSnippets {
+            draft.url = ""
+            draft.snippets = cleanedSnippets.map { s in
+                var s = s
+                s.title = s.title.trimmingCharacters(in: .whitespaces)
+                if s.title.isEmpty { s.title = String(s.text.split(separator: "\n").first ?? "prompt").prefix(40).description }
+                return s
+            }
+        }
         if isFolder {
             draft.url = ""
             draft.children = cleanedChildren.map { c in
@@ -356,6 +382,52 @@ struct ActionEditor: View {
         }
         withAnimation(.spring) { store.upsert(draft) }
         dismiss()
+    }
+
+    private var snippetsEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("prompts").font(.mono(11)).foregroundStyle(t.muted)
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(Array((draft.snippets ?? []).enumerated()), id: \.element.id) { i, _ in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                MiniField(text: snippetBinding(i, \.title), prompt: "name, e.g. code review")
+                                HoverIconButton(icon: "xmark", size: 10, hoverColor: t.danger, help: "remove prompt") {
+                                    draft.snippets?.remove(at: i)
+                                }
+                            }
+                            TextEditor(text: snippetBinding(i, \.text))
+                                .font(.mono(11.5))
+                                .scrollContentBackground(.hidden)
+                                .padding(6)
+                                .frame(height: 84)
+                                .background(RoundedRectangle(cornerRadius: 7).fill(t.bg))
+                                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.border))
+                        }
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 9).strokeBorder(t.border.opacity(0.7)))
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+            .fixedSize(horizontal: false, vertical: true)
+            Button {
+                draft.snippets?.append(Snippet(title: "", text: ""))
+            } label: {
+                HStack(spacing: 6) { FAIcon("plus", size: 9); Text("add prompt").font(.mono(11)) }
+                    .foregroundStyle(t.accent)
+            }
+            .buttonStyle(.plain)
+            .handCursor()
+        }
+    }
+
+    private func snippetBinding(_ i: Int, _ kp: WritableKeyPath<Snippet, String>) -> Binding<String> {
+        Binding(
+            get: { (draft.snippets?.indices.contains(i) == true) ? draft.snippets![i][keyPath: kp] : "" },
+            set: { v in if draft.snippets?.indices.contains(i) == true { draft.snippets![i][keyPath: kp] = v } }
+        )
     }
 
     private var linksEditor: some View {
@@ -487,5 +559,113 @@ private struct MiniField: View {
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 7).fill(t.bg))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.border))
+    }
+}
+
+// MARK: - Prompts (copy-on-click snippets)
+
+struct PromptsChip: View {
+    let collection: QuickAction
+    let edit: () -> Void
+    @State private var hover = false
+    @State private var show = false
+
+    var body: some View {
+        Button { show.toggle() } label: {
+            ChipLabel(icon: collection.icon, title: collection.title, folder: true, hover: hover, open: show)
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
+        .popover(isPresented: $show, arrowEdge: .bottom) {
+            ThemeProvider(translucent: false) {
+                PromptsMenu(collection: collection, close: { show = false }, edit: { show = false; edit() })
+            }
+        }
+    }
+}
+
+struct PromptsMenu: View {
+    @Environment(\.theme) private var t
+    let collection: QuickAction
+    let close: () -> Void
+    let edit: () -> Void
+    @State private var copiedID: UUID?
+    @State private var query = ""
+
+    private var items: [Snippet] {
+        let all = collection.snippets ?? []
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return all }
+        return all.filter { $0.title.lowercased().contains(q) || $0.text.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                SectionLabel(collection.title.lowercased())
+                Spacer()
+                Text("click to copy").font(.mono(9.5)).foregroundStyle(t.faint)
+            }
+            .padding(.horizontal, 8).padding(.bottom, 4)
+            if (collection.snippets?.count ?? 0) > 6 {
+                HStack(spacing: 8) {
+                    FAIcon("magnifying-glass", size: 10).foregroundStyle(t.faint)
+                    TextField("", text: $query, prompt: Text("filter").foregroundStyle(t.faint))
+                        .textFieldStyle(.plain).font(.mono(11.5))
+                }
+                .padding(7)
+                .background(RoundedRectangle(cornerRadius: 7).fill(t.bg))
+                .padding(.horizontal, 4).padding(.bottom, 4)
+            }
+            if items.isEmpty {
+                Text(query.isEmpty ? "no prompts yet" : "no matches").font(.mono(11)).foregroundStyle(t.faint).padding(8)
+            }
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(items) { s in
+                        Button { copy(s) } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                FAIcon(copiedID == s.id ? "check" : "copy", size: 11)
+                                    .foregroundStyle(t.accent).frame(width: 16).padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.title).font(.mono(12)).foregroundStyle(t.text)
+                                    Text(s.text.replacingOccurrences(of: "\n", with: " "))
+                                        .font(.mono(10)).foregroundStyle(t.faint).lineLimit(2)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PopoverRowStyle())
+                    }
+                }
+            }
+            .frame(maxHeight: 360)
+            .fixedSize(horizontal: false, vertical: true)
+            Divider().padding(.vertical, 4)
+            HStack {
+                Spacer()
+                Button(action: edit) {
+                    HStack(spacing: 6) { FAIcon("pen", size: 9); Text("edit / add").font(.mono(11)) }
+                }
+                .buttonStyle(.plain).handCursor().foregroundStyle(t.muted)
+            }
+            .padding(.horizontal, 8)
+        }
+        .padding(8)
+        .frame(width: 300)
+        .background(t.panel)
+        .foregroundStyle(t.text)
+    }
+
+    private func copy(_ s: Snippet) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(s.text, forType: .string)
+        Feedback.check()
+        withAnimation(.easeOut(duration: 0.12)) { copiedID = s.id }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { close() }
     }
 }

@@ -6,7 +6,7 @@ enum CLI {
     static let commands: Set<String> = [
         "add", "list", "ls", "done", "undo", "reopen", "move", "mv", "edit", "rename", "rm", "delete",
         "sub", "clear", "action", "actions", "mcp", "path", "help", "--help", "-h", "version", "--version",
-        "paste", "copy", "note", "notes",
+        "paste", "copy", "note", "notes", "lists", "prompt", "prompts",
     ]
 
     static func handles(_ args: [String]) -> Bool {
@@ -59,6 +59,7 @@ enum CLI {
         let cmd = argv[1]
         let a = parse(Array(argv.dropFirst(2)))
         let json = a.has("--json", "-j")
+        _ = try? DataFile.load() // registers custom lists before any list names are parsed
         do {
             switch cmd {
             case "mcp":
@@ -122,6 +123,10 @@ enum CLI {
                 let n = try TaskDB.clearDone(try bucket(a.positional.first == "all" ? nil : a.positional.first))
                 print(json ? TaskDB.jsonString(["removed": n]) : "cleared \(n) done task\(n == 1 ? "" : "s")")
 
+            case "lists":
+                try runLists(a, json)
+            case "prompt", "prompts":
+                try runPrompt(a, json)
             case "note", "notes":
                 try runNote(a, json)
             case "sub":
@@ -160,6 +165,66 @@ enum CLI {
         case "undo", "reopen": emit(try TaskDB.setSubtaskDone(p[1], rest, false), json, verb: "subtask reopened in")
         case "rm", "delete": emit(try TaskDB.deleteSubtask(p[1], rest), json, verb: "subtask removed from")
         default: throw DTError("unknown sub command '\(p[0])'")
+        }
+    }
+
+    private static func runPrompt(_ a: Args, _ json: Bool) throws {
+        let p = a.positional
+        switch p.first ?? "list" {
+        case "list", "ls":
+            let all = TaskDB.allPrompts(try TaskDB.read())
+            if json { print(TaskDB.jsonString(all.map { TaskDB.json($0.snippet, collection: $0.collection) })); return }
+            if all.isEmpty { print("no prompts") }
+            for (c, s) in all { print("\(s.shortID)  [\(c)] \(s.title)") }
+        case "add":
+            // devtasks prompt add <title> <text...>   or pipe the text: pbpaste | devtasks prompt add <title>
+            guard p.count >= 2 else { throw DTError("usage: devtasks prompt add <title> <text> [--in <prompts button>]") }
+            var text = unescape(p.dropFirst(2).joined(separator: " "))
+            if text.isEmpty, isatty(0) == 0 { text = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self) }
+            let (s, col) = try TaskDB.addPrompt(title: p[1], text: text, collection: a.value("--in"))
+            print(json ? TaskDB.jsonString(TaskDB.json(s, collection: col)) : "added prompt \(s.shortID)  \(s.title)  [\(col)]")
+        case "show", "cat":
+            guard p.count >= 2 else { throw DTError("usage: devtasks prompt show <prompt>") }
+            print(try TaskDB.findPrompt(p.dropFirst().joined(separator: " "), in: try TaskDB.read()).text)
+        case "copy":
+            guard p.count >= 2 else { throw DTError("usage: devtasks prompt copy <prompt>") }
+            let s = try TaskDB.findPrompt(p.dropFirst().joined(separator: " "), in: try TaskDB.read())
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(s.text, forType: .string)
+            print("copied \(s.title)")
+        default:
+            throw DTError("usage: devtasks prompt [list | add <title> <text> | show <prompt> | copy <prompt>]")
+        }
+    }
+
+    private static func runLists(_ a: Args, _ json: Bool) throws {
+        let p = a.positional
+        switch p.first ?? "ls" {
+        case "ls", "list":
+            let d = try TaskDB.read()
+            let rows: [[String: Any]] = Bucket.allCases.map { b in
+                ["id": b.rawValue, "name": b.title, "icon": b.icon, "builtin": b.isBuiltin,
+                 "open": d.tasks.filter { $0.bucket == b && !$0.done }.count]
+            }
+            if json { print(TaskDB.jsonString(rows)); return }
+            for r in rows {
+                let id = (r["id"] as! String).padding(toLength: 18, withPad: " ", startingAt: 0)
+                print("\(id) \((r["name"] as! String).padding(toLength: 20, withPad: " ", startingAt: 0)) \(r["open"]!) open\((r["builtin"] as! Bool) ? "" : "  (custom)")")
+            }
+        case "add", "new":
+            guard p.count >= 2 else { throw DTError("usage: devtasks lists add <name> [--icon name]") }
+            let l = try TaskDB.addList(p.dropFirst().joined(separator: " "), icon: a.value("--icon", "-i") ?? "list-ul")
+            print(json ? TaskDB.jsonString(["id": l.id, "name": l.name, "icon": l.icon]) : "added list \(l.id)  (\(l.name))  use @\(l.id) when adding tasks")
+        case "rename":
+            guard p.count >= 3 else { throw DTError("usage: devtasks lists rename <list> <new name>") }
+            let l = try TaskDB.renameList(p[1], to: p.dropFirst(2).joined(separator: " "))
+            print(json ? TaskDB.jsonString(["id": l.id, "name": l.name, "icon": l.icon]) : "renamed list \(l.id) to \(l.name)")
+        case "rm", "delete":
+            guard p.count >= 2 else { throw DTError("usage: devtasks lists rm <list>") }
+            let (l, moved) = try TaskDB.deleteList(p.dropFirst().joined(separator: " "))
+            print(json ? TaskDB.jsonString(["id": l.id, "movedToBacklog": moved]) : "deleted list \(l.name); \(moved) task\(moved == 1 ? "" : "s") moved to backlog")
+        default:
+            throw DTError("usage: devtasks lists [ls | add <name> | rename <list> <name> | rm <list>]")
         }
     }
 
@@ -202,11 +267,12 @@ enum CLI {
             if json { print(TaskDB.jsonString(acts.map(TaskDB.json))); return }
             if acts.isEmpty { print("no quick actions") }
             func row(_ x: QuickAction, _ indent: String) -> String {
-                "\(indent)\(x.shortID)  \(x.title.padding(toLength: 22, withPad: " ", startingAt: 0)) fa-\(x.icon.padding(toLength: 18, withPad: " ", startingAt: 0)) \(x.isFolder ? "(folder)" : x.url)"
+                "\(indent)\(x.shortID)  \(x.title.padding(toLength: 22, withPad: " ", startingAt: 0)) fa-\(x.icon.padding(toLength: 18, withPad: " ", startingAt: 0)) \(x.isFolder ? "(folder)" : x.isSnippets ? "(prompts)" : x.url)"
             }
             for x in acts {
                 print(row(x, ""))
                 for c in x.children ?? [] { print(row(c, "  - ")) }
+                for s in x.snippets ?? [] { print("  - \(s.shortID)  \(s.title)  (prompt)") }
             }
         case "add":
             guard p.count >= 3 else { throw DTError("usage: devtasks action add <title> <url> [--icon name] [--in <folder>]") }
@@ -258,7 +324,7 @@ enum CLI {
     devtasks - command line for DevTasks (edits the same data the app shows, live)
 
     tasks
-      devtasks add <title> [@today|@tomorrow|@week|@backlog] [--list <list>] [--sub <subtask>]...
+      devtasks add <title> [@today|@tomorrow|@week|@backlog|@<custom-list>] [--list <list>] [--sub <subtask>]...
       devtasks list [today|tomorrow|week|backlog|all] [--all] [--json]
       devtasks done <task>...          mark complete
       devtasks undo <task>...          reopen
@@ -266,6 +332,12 @@ enum CLI {
       devtasks edit <task> <new title>
       devtasks rm <task>...
       devtasks clear [list|all]        delete completed tasks
+
+    lists
+      devtasks lists                   show all lists (built-in + custom)
+      devtasks lists add <name> [--icon <name>]
+      devtasks lists rename <list> <new name>
+      devtasks lists rm <list>         its tasks move to backlog
 
     subtasks
       devtasks sub add  <task> <title>
@@ -278,6 +350,12 @@ enum CLI {
       devtasks action add <title> <url> [--icon <font-awesome-name>] [--in <folder>]
       devtasks action folder <title> [--icon <name>]      a dropdown of links
       devtasks action rm <action>
+
+    prompts (a quick-action button whose items copy text)
+      devtasks prompt list
+      devtasks prompt add <title> <text> [--in <prompts button>]   (or pipe the text in)
+      devtasks prompt show <prompt>
+      devtasks prompt copy <prompt>
 
     notes
       devtasks note list

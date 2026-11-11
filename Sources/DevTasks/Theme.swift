@@ -22,10 +22,14 @@ struct Theme: Identifiable {
 
     func tint(_ b: Bucket) -> Color {
         switch b {
-        case .today: accent
-        case .tomorrow: info
-        case .week: warn
-        case .backlog: muted
+        case .today: return accent
+        case .tomorrow: return info
+        case .week: return warn
+        case .backlog: return muted
+        default:
+            let palette = [info, danger, accent, warn]
+            let h = b.rawValue.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
+            return palette[h % palette.count]
         }
     }
 

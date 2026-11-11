@@ -109,6 +109,8 @@ private struct NoteDetail: View {
     @Environment(\.theme) private var t
     let note: Note
     @State private var copied = false
+    @State private var saved = false
+    @State private var pickCollection = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -117,6 +119,29 @@ private struct NoteDetail: View {
                 Text("edited ").font(.mono(10.5)).foregroundStyle(t.faint)
                     + Text(note.updatedAt, format: .relative(presentation: .named)).font(.mono(10.5)).foregroundStyle(t.faint)
                 Spacer()
+                HoverIconButton(icon: saved ? "check" : "wand-magic-sparkles", hoverColor: t.accent, help: "save note to a prompts button") {
+                    if store.promptCollections.count > 1 { pickCollection = true } else { save(into: nil) }
+                }
+                .popover(isPresented: $pickCollection, arrowEdge: .bottom) {
+                    ThemeProvider(translucent: false) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            SectionLabel("save to").padding(.horizontal, 8).padding(.bottom, 4)
+                            ForEach(store.promptCollections) { c in
+                                Button { pickCollection = false; save(into: c.id) } label: {
+                                    HStack(spacing: 10) {
+                                        FAIcon(c.icon, size: 11).foregroundStyle(t.accent).frame(width: 16)
+                                        Text(c.title).font(.mono(12))
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PopoverRowStyle())
+                            }
+                        }
+                        .padding(8).frame(width: 220).background(t.panel).foregroundStyle(t.text)
+                    }
+                }
                 HoverIconButton(icon: copied ? "check" : "copy", hoverColor: t.accent, help: "copy note (keeps links)") {
                     LinkFormat.copy(note.text)
                     copied = true
@@ -135,6 +160,16 @@ private struct NoteDetail: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(t.panel))
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(t.border))
         .clipShape(RoundedRectangle(cornerRadius: 9))
+    }
+
+    /// The note's first line becomes the prompt name, the rest its text (whole note if single-line).
+    private func save(into id: UUID?) {
+        let lines = note.text.components(separatedBy: "\n")
+        let rest = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = lines.first?.trimmingCharacters(in: .whitespaces) ?? "prompt"
+        withAnimation(.spring) { store.savePrompt(title: title, text: rest.isEmpty ? note.text : rest, into: id) }
+        saved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { saved = false }
     }
 }
 

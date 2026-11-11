@@ -54,10 +54,16 @@ struct SidebarView: View {
 
             SectionLabel("lists").padding(.horizontal, 14).padding(.bottom, 4)
 
-            ForEach(Bucket.allCases) { b in
-                SidebarRow(bucket: b)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Bucket.builtins) { b in SidebarRow(bucket: b) }
+                    ForEach(store.lists) { l in SidebarRow(bucket: Bucket(raw: l.id)) }
+                    NewListRow()
+                }
+                .padding(.horizontal, 8)
             }
-            .padding(.horizontal, 8)
+            .scrollIndicators(.never)
+            .fixedSize(horizontal: false, vertical: true)
 
             SectionLabel("notes").padding(.horizontal, 14).padding(.top, 18).padding(.bottom, 4)
             NotesRow().padding(.horizontal, 8)
@@ -100,8 +106,32 @@ struct SidebarRow: View {
     let bucket: Bucket
     @State private var hover = false
     @State private var targeted = false
+    @State private var renaming = false
+    @State private var newName = ""
+    @State private var pickingIcon = false
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
+        if renaming {
+            HStack(spacing: 10) {
+                FAIcon(bucket.icon, size: 12).foregroundStyle(t.tint(bucket)).frame(width: 16)
+                TextField("", text: $newName)
+                    .textFieldStyle(.plain)
+                    .font(.mono(12.5))
+                    .focused($nameFocused)
+                    .onSubmit { store.renameList(bucket.rawValue, to: newName); renaming = false }
+                    .onExitCommand { renaming = false }
+                    .onChange(of: nameFocused) { _, f in if !f { renaming = false } }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7).strokeBorder(t.accent.opacity(0.6)))
+            .onAppear { newName = bucket.title; nameFocused = true }
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder private var row: some View {
         let selected = store.selected == bucket && !store.showNotes
         let count = store.open(bucket).count
         Button {
@@ -122,9 +152,9 @@ struct SidebarRow: View {
                         .foregroundStyle(selected ? t.tint(bucket) : t.faint)
                         .contentTransition(.numericText())
                 }
-                Text("\u{2318}\(String(bucket.key))")
+                Text("\u{2318}\(String(bucket.key ?? "0"))")
                     .font(.mono(10)).foregroundStyle(t.faint)
-                    .opacity(hover ? 1 : 0)
+                    .opacity(hover && bucket.key != nil ? 1 : 0)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -155,6 +185,118 @@ struct SidebarRow: View {
             }
             return !ids.isEmpty
         } isTargeted: { targeted = $0 }
+        .contextMenu {
+            if !bucket.isBuiltin {
+                Button("Rename") { renaming = true }
+                Button("Change Icon") { pickingIcon = true }
+                Divider()
+                Button("Delete List", role: .destructive) {
+                    withAnimation(.spring(response: 0.3)) { store.deleteList(bucket.rawValue) }
+                }
+            }
+        }
+        .popover(isPresented: $pickingIcon, arrowEdge: .trailing) {
+            ThemeProvider(translucent: false) {
+                IconGrid(selected: bucket.icon) { icon in
+                    store.setListIcon(bucket.rawValue, icon)
+                    pickingIcon = false
+                }
+            }
+        }
+    }
+}
+
+/// "+ new list" that turns into a name field.
+struct NewListRow: View {
+    @EnvironmentObject private var store: Store
+    @Environment(\.theme) private var t
+    @State private var editing = false
+    @State private var name = ""
+    @State private var hover = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if editing {
+            HStack(spacing: 10) {
+                FAIcon("list-ul", size: 12).foregroundStyle(t.accent).frame(width: 16)
+                TextField("", text: $name, prompt: Text("list name").foregroundStyle(t.faint))
+                    .textFieldStyle(.plain)
+                    .font(.mono(12.5))
+                    .focused($focused)
+                    .onSubmit {
+                        withAnimation(.spring(response: 0.3)) { store.addList(name) }
+                        name = ""
+                        editing = false
+                    }
+                    .onExitCommand { editing = false; name = "" }
+                    .onChange(of: focused) { _, f in if !f { editing = false; name = "" } }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7).strokeBorder(t.accent.opacity(0.6)))
+            .onAppear { focused = true }
+        } else {
+            Button { editing = true } label: {
+                HStack(spacing: 10) {
+                    FAIcon("plus", size: 11).frame(width: 16)
+                    Text("new list").font(.mono(12))
+                    Spacer()
+                }
+                .foregroundStyle(hover ? t.accent : t.faint)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .handCursor()
+            .onHover { hover = $0 }
+        }
+    }
+}
+
+/// Small searchable icon picker (dev icons first).
+struct IconGrid: View {
+    @Environment(\.theme) private var t
+    let selected: String
+    let pick: (String) -> Void
+    @State private var query = ""
+
+    private var icons: [FAEntry] {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        if q.isEmpty { return FA.devIcons }
+        return Array(FA.entries.filter { $0.names.contains { $0.contains(q) } }.prefix(300))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                FAIcon("magnifying-glass", size: 10).foregroundStyle(t.faint)
+                TextField("", text: $query, prompt: Text("search icons").foregroundStyle(t.faint))
+                    .textFieldStyle(.plain).font(.mono(12))
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 7).fill(t.bg))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.border))
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 32, maximum: 36), spacing: 5)], spacing: 5) {
+                    ForEach(icons) { e in
+                        let on = e.name == selected
+                        Button { pick(e.name) } label: {
+                            FAIcon(e.name, size: 13)
+                                .foregroundStyle(on ? t.accentInk : t.text)
+                                .frame(width: 32, height: 32)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(on ? t.accent : t.bg))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .handCursor()
+                        .help(e.name)
+                    }
+                }
+            }
+            .frame(height: 220)
+        }
+        .padding(12)
+        .frame(width: 300)
+        .background(t.panel)
     }
 }
 

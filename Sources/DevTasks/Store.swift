@@ -5,6 +5,12 @@ final class Store: ObservableObject {
     @Published var tasks: [TaskItem] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var actions: [QuickAction] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var notes: [Note] = [] { didSet { if !applyingExternal { scheduleSave() } } }
+    @Published var lists: [CustomList] = [] {
+        didSet {
+            ListRegistry.custom = lists
+            if !applyingExternal { scheduleSave() }
+        }
+    }
     @Published var selected: Bucket = .today
     @Published var showNotes = UserDefaults.standard.bool(forKey: "showNotes") {
         didSet { UserDefaults.standard.set(showNotes, forKey: "showNotes") }
@@ -29,6 +35,8 @@ final class Store: ObservableObject {
             try? FileManager.default.copyItem(at: DataFile.url, to: backup)
         }
         lastSynced = try? Data(contentsOf: DataFile.url)
+        lists = data.lists
+        ListRegistry.custom = data.lists
         tasks = data.tasks
         notes = data.notes
         actions = data.actions
@@ -70,11 +78,14 @@ final class Store: ObservableObject {
 
     private func reloadIfChanged() {
         guard let raw = try? Data(contentsOf: DataFile.url), raw != lastSynced,
-              let d = try? DataFile.decoder.decode(AppData.self, from: raw) else { return }
+              var d = try? DataFile.decoder.decode(AppData.self, from: raw) else { return }
+        d.normalize()
         lastSynced = raw
         pendingSave?.cancel()
         applyingExternal = true
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            lists = d.lists
+            if !selected.exists { selected = .today }
             tasks = d.tasks
             notes = d.notes
             actions = d.actions
@@ -163,6 +174,54 @@ final class Store: ObservableObject {
         )
     }
 
+    // MARK: - Custom lists
+
+    @discardableResult
+    func addList(_ name: String, icon: String = "list-ul") -> Bucket? {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return nil }
+        let l = CustomList(id: TaskDB.uniqueSlug(n, lists), name: n, icon: icon)
+        lists.append(l)
+        let b = Bucket(raw: l.id)
+        selected = b
+        showNotes = false
+        return b
+    }
+
+    func renameList(_ id: String, to name: String) {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, let i = lists.firstIndex(where: { $0.id == id }) else { return }
+        lists[i].name = n
+    }
+
+    func setListIcon(_ id: String, _ icon: String) {
+        guard let i = lists.firstIndex(where: { $0.id == id }) else { return }
+        lists[i].icon = icon
+    }
+
+    /// Tasks in a deleted list move to the backlog.
+    func deleteList(_ id: String) {
+        for i in tasks.indices where tasks[i].bucket.rawValue == id { tasks[i].bucket = .backlog }
+        lists.removeAll { $0.id == id }
+        if selected.rawValue == id { selected = .today }
+    }
+
+    // MARK: - Prompts
+
+    var promptCollections: [QuickAction] { actions.filter(\.isSnippets) }
+
+    /// Saves text as a prompt; creates a "Prompts" button when there is none.
+    func savePrompt(title: String, text: String, into collectionID: UUID?) {
+        let snip = Snippet(title: title.isEmpty ? "prompt" : title, text: text)
+        if let id = collectionID, let i = actions.firstIndex(where: { $0.id == id }) {
+            actions[i].snippets?.append(snip)
+        } else if let i = actions.firstIndex(where: \.isSnippets) {
+            actions[i].snippets?.append(snip)
+        } else {
+            actions.append(QuickAction(title: "Prompts", url: "", icon: "wand-magic-sparkles", snippets: [snip]))
+        }
+    }
+
     // MARK: - Notes
 
     @discardableResult
@@ -219,6 +278,7 @@ final class Store: ObservableObject {
         var d = AppData()
         d.tasks = tasks
         d.notes = notes
+        d.lists = lists
         d.actions = actions
         d.lastDay = lastDay
         return d

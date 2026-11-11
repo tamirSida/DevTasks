@@ -10,7 +10,8 @@ Run `devtasks help` for the full reference.
 
 ## Lists
 
-`today` (default), `tomorrow`, `week`, `backlog`. Each new day, open tomorrow tasks move to today automatically.
+Built-in: `today` (default), `tomorrow`, `week`, `backlog`. Each new day, open tomorrow tasks move to today automatically.
+Custom lists: `devtasks lists` shows them with their ids; use the id anywhere a list is expected (`--list side-project`, `@side-project`).
 
 ## Referring to tasks
 
@@ -37,6 +38,20 @@ devtasks sub done <task> <n|title>    # n is 1-based, as shown by list
 devtasks sub undo <task> <n|title>
 devtasks sub rm   <task> <n|title>
 
+devtasks lists                        # all lists, with ids and open counts
+devtasks lists add "Side Project" --icon rocket
+devtasks lists rm side-project        # its tasks move to backlog
+
+devtasks note add 'standup\n- shipped auth fix'   # scratchpad notes (first line = title)
+pbpaste | devtasks note add
+devtasks note list | show <note> | append <note> <text> | rm <note>
+
+devtasks prompt add "code review" 'Review this diff for bugs...'   # saved prompts, copy on click in the app
+devtasks prompt list | show <prompt> | copy <prompt>
+
+devtasks paste [list]                 # task from clipboard; keeps embedded links (e.g. Azure DevOps titles)
+devtasks copy <task>                  # copy a task with clickable links for chats
+
 devtasks action list
 devtasks action add "Grafana" https://grafana.example.com --icon chart-line
 devtasks action folder "Dashboards" --icon gauge-high           # a dropdown of links
@@ -52,6 +67,7 @@ Add `--json` to any command to get JSON back (errors become `{"error": "..."}` w
 - Keep titles short and imperative ("fix token refresh race"). Put steps in subtasks, not in the title.
 - Titles can span lines: use `\n` in the CLI (`devtasks add 'deploy\nrun migrations first'`).
 - Put URLs straight into titles (PRs, tickets, docs). The app shows them as short clickable links.
+- For a link with its own label use markdown: `[PBI 48213: Fix SSO timeout](https://dev.azure.com/...)`.
 - Don't `rm` or `clear` unless the user asked to delete. Completing a task (`done`) is the normal path.
 - Quick-action icons are Font Awesome 6 names without the `fa-` prefix, Solid or Brands: rocket, bug, server, terminal, chart-line, github, gitlab, docker, aws, python, slack, jira, figma. Unknown names are rejected.
 - After making changes, tell the user briefly what you added, moved or checked off.

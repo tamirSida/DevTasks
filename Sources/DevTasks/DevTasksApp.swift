@@ -38,9 +38,9 @@ struct DevTasksApp: App {
                     .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandMenu("Lists") {
-                ForEach(Bucket.allCases) { b in
+                ForEach(Bucket.builtins) { b in
                     Button(b.title) { store.selected = b; store.showNotes = false }
-                        .keyboardShortcut(KeyEquivalent(b.key))
+                        .keyboardShortcut(KeyEquivalent(b.key ?? "1"))
                 }
                 Divider()
                 Button("Scratchpad") { store.showNotes = true }

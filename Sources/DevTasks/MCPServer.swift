@@ -70,6 +70,7 @@ enum MCPServer {
     }
 
     private static func call(_ name: String, _ a: [String: Any]) throws -> Any {
+        _ = try? DataFile.load() // refresh custom lists (the app may have added some)
         switch name {
         case "list_tasks":
             let d = try TaskDB.read()
@@ -96,6 +97,24 @@ enum MCPServer {
             return TaskDB.json(try TaskDB.setSubtaskDone(try str(a, "task"), try subRef(a), a["done"] as? Bool ?? true))
         case "delete_subtask":
             return TaskDB.json(try TaskDB.deleteSubtask(try str(a, "task"), try subRef(a)))
+        case "list_prompts":
+            return TaskDB.allPrompts(try TaskDB.read()).map { TaskDB.json($0.snippet, collection: $0.collection) }
+        case "add_prompt":
+            let (s, col) = try TaskDB.addPrompt(title: a["title"] as? String ?? "", text: try str(a, "text"),
+                                                collection: a["collection"] as? String)
+            return TaskDB.json(s, collection: col)
+        case "list_lists":
+            let d = try TaskDB.read()
+            return Bucket.allCases.map { b in
+                ["id": b.rawValue, "name": b.title, "builtin": b.isBuiltin,
+                 "open": d.tasks.filter { $0.bucket == b && !$0.done }.count] as [String: Any]
+            }
+        case "create_list":
+            let l = try TaskDB.addList(try str(a, "name"), icon: a["icon"] as? String ?? "list-ul")
+            return ["id": l.id, "name": l.name, "icon": l.icon]
+        case "delete_list":
+            let (l, moved) = try TaskDB.deleteList(try str(a, "list"))
+            return ["deleted": l.id, "movedToBacklog": moved]
         case "list_notes":
             return try TaskDB.read().notes.map(TaskDB.json)
         case "add_note":
@@ -126,7 +145,7 @@ enum MCPServer {
     // MARK: schemas
 
     private static let listEnum: [String: Any] = [
-        "type": "string", "enum": ["today", "tomorrow", "week", "backlog"],
+        "type": "string", "description": "List id: today, tomorrow, week, backlog, or a custom list id from list_lists",
     ]
     private static let taskRef: [String: Any] = [
         "type": "string", "description": "Task short id (from list_tasks) or a unique part of its title",
@@ -164,6 +183,15 @@ enum MCPServer {
             tool("complete_subtask", "Check (or with done=false, uncheck) a subtask.",
                  ["task": taskRef, "subtask": subRefSchema, "done": ["type": "boolean"]], ["task", "subtask"]),
             tool("delete_subtask", "Remove a subtask.", ["task": taskRef, "subtask": subRefSchema], ["task", "subtask"]),
+            tool("list_prompts", "List saved prompts/snippets from the prompts buttons.", readOnly: true),
+            tool("add_prompt", "Save a prompt/snippet to a prompts button (creates 'Prompts' if none exists).",
+                 ["title": ["type": "string"], "text": ["type": "string"],
+                  "collection": ["type": "string", "description": "Prompts button name; created if missing"]], ["text"]),
+            tool("list_lists", "List all task lists (built-in and custom) with open counts.", readOnly: true),
+            tool("create_list", "Create a custom task list. Returns its id for use as 'list' elsewhere.",
+                 ["name": ["type": "string"], "icon": ["type": "string", "description": "Font Awesome icon name"]], ["name"]),
+            tool("delete_list", "Delete a custom list. Its tasks move to the backlog.",
+                 ["list": ["type": "string", "description": "Custom list id or name"]], ["list"]),
             tool("list_notes", "List notes from the notepad (id, title = first line, full text).", readOnly: true),
             tool("add_note", "Create a note. The first line becomes its title.", ["text": ["type": "string"]], ["text"]),
             tool("append_note", "Append text to an existing note.",
