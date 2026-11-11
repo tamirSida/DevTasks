@@ -7,8 +7,8 @@ A native macOS todo app for developers. SwiftUI, no servers, no accounts. Your d
 You need macOS 14 or newer and the Command Line Tools (`xcode-select --install`). Full Xcode is not required.
 
 ```bash
-git clone <your-repo-url> devtasks
-cd devtasks
+git clone https://github.com/tamirSida/DevTasks.git
+cd DevTasks
 ./build.sh --install      # builds and copies DevTasks.app to /Applications
 ```
 
