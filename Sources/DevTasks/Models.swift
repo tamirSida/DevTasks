@@ -109,8 +109,22 @@ struct QuickAction: Identifiable, Codable, Equatable {
     }
 }
 
+struct Note: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var text = ""
+    var updatedAt = Date()
+
+    private var lines: [String] {
+        text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    var title: String { lines.first.map(LinkFormat.plain) ?? "untitled" }
+    var preview: String { lines.dropFirst().first.map(LinkFormat.plain) ?? "" }
+    var shortID: String { String(id.uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(6)) }
+}
+
 struct AppData: Codable {
     var tasks: [TaskItem] = []
+    var notes: [Note] = []
     var actions: [QuickAction] = QuickAction.defaults
     var lastDay: String = DataFile.dayKey(Date())
 
@@ -119,6 +133,7 @@ struct AppData: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         tasks = try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? []
+        notes = try c.decodeIfPresent([Note].self, forKey: .notes) ?? []
         actions = try c.decodeIfPresent([QuickAction].self, forKey: .actions) ?? QuickAction.defaults
         lastDay = try c.decodeIfPresent(String.self, forKey: .lastDay) ?? DataFile.dayKey(Date())
     }

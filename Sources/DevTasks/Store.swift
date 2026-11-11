@@ -4,7 +4,12 @@ import AppKit
 final class Store: ObservableObject {
     @Published var tasks: [TaskItem] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var actions: [QuickAction] = [] { didSet { if !applyingExternal { scheduleSave() } } }
+    @Published var notes: [Note] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var selected: Bucket = .today
+    @Published var showNotes = UserDefaults.standard.bool(forKey: "showNotes") {
+        didSet { UserDefaults.standard.set(showNotes, forKey: "showNotes") }
+    }
+    @Published var selectedNote: UUID?
     @Published var focusQuickAdd = 0
 
     private var lastDay: String
@@ -25,6 +30,7 @@ final class Store: ObservableObject {
         }
         lastSynced = try? Data(contentsOf: DataFile.url)
         tasks = data.tasks
+        notes = data.notes
         actions = data.actions
         lastDay = data.lastDay
 
@@ -70,6 +76,7 @@ final class Store: ObservableObject {
         applyingExternal = true
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             tasks = d.tasks
+            notes = d.notes
             actions = d.actions
         }
         lastDay = d.lastDay
@@ -156,6 +163,34 @@ final class Store: ObservableObject {
         )
     }
 
+    // MARK: - Notes
+
+    @discardableResult
+    func newNote() -> UUID {
+        let n = Note()
+        notes.insert(n, at: 0)
+        selectedNote = n.id
+        showNotes = true
+        return n.id
+    }
+
+    func deleteNote(_ id: UUID) {
+        guard let i = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes.remove(at: i)
+        if selectedNote == id { selectedNote = notes.indices.contains(i) ? notes[i].id : notes.last?.id }
+    }
+
+    func noteBinding(_ id: UUID) -> Binding<String> {
+        Binding(
+            get: { [weak self] in self?.notes.first { $0.id == id }?.text ?? "" },
+            set: { [weak self] v in
+                guard let self, let i = self.notes.firstIndex(where: { $0.id == id }), self.notes[i].text != v else { return }
+                self.notes[i].text = v
+                self.notes[i].updatedAt = Date()
+            }
+        )
+    }
+
     // MARK: - Quick actions
 
     func upsert(_ a: QuickAction) {
@@ -183,6 +218,7 @@ final class Store: ObservableObject {
     private func snapshot() -> AppData {
         var d = AppData()
         d.tasks = tasks
+        d.notes = notes
         d.actions = actions
         d.lastDay = lastDay
         return d

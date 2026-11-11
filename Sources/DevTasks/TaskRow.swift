@@ -2,11 +2,19 @@ import SwiftUI
 import AppKit
 
 enum Feedback {
+    /// Loaded once at launch so the first check doesn't wait on disk.
+    private static let pop: NSSound? = {
+        let s = NSSound(named: "Pop")
+        s?.volume = 0.35
+        return s
+    }()
+
+    static func preload() { _ = pop }
+
     static func check() {
-        if UserDefaults.standard.object(forKey: "soundOn") as? Bool ?? true {
-            let s = NSSound(named: "Pop")
-            s?.volume = 0.35
-            s?.play()
+        if UserDefaults.standard.object(forKey: "soundOn") as? Bool ?? true, let s = pop {
+            if s.isPlaying { s.stop() }
+            s.play()
         }
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     }
@@ -22,6 +30,7 @@ struct TaskRow: View {
     @State private var expanded = false
     @State private var hover = false
     @State private var showMove = false
+    @State private var copied = false
     @State private var newSub = ""
     @StateObject private var subCtl = FieldController()
 
@@ -40,16 +49,12 @@ struct TaskRow: View {
                     .frame(width: 8)
                     .padding(.top, 3)
 
-                CheckBox(checked: checked, size: 18, action: toggle)
+                CheckBox(checked: checked, baseSize: 18, action: toggle)
 
                 Group {
                     if checked {
-                        Text(LinkFormat.plain(task.title))
-                            .font(.mono(13))
-                            .lineSpacing(2)
-                            .foregroundStyle(t.muted)
-                            .strikethrough(true, color: t.muted)
-                            .lineLimit(4)
+                        RichField(text: .constant(task.title), size: 13, color: t.muted, accent: t.accent.opacity(0.75),
+                                  readOnly: true, strike: true)
                     } else {
                         RichField(text: store.titleBinding(task.id), size: 13, color: t.text, accent: t.accent, inline: true)
                     }
@@ -62,13 +67,14 @@ struct TaskRow: View {
                 }
 
                 HStack(spacing: 2) {
+                    HoverIconButton(icon: copied ? "check" : "copy", hoverColor: t.accent, help: "copy (keeps links for chats)") { copy() }
                     HoverIconButton(icon: "arrow-right-arrow-left", help: "move to list") { showMove = true }
                         .popover(isPresented: $showMove, arrowEdge: .bottom) { MovePopover(task: task, dismiss: { showMove = false }) }
                     HoverIconButton(icon: "trash-can", hoverColor: t.danger, help: "delete") {
                         withAnimation(.spring(response: 0.3)) { store.delete(task.id) }
                     }
                 }
-                .opacity(hover || showMove ? 1 : 0)
+                .opacity(hover || showMove || copied ? 1 : 0)
                 .padding(.top, -2)
 
                 HoverIconButton(icon: "chevron-down", size: 10, help: "subtasks") {
@@ -133,6 +139,7 @@ struct TaskRow: View {
         }
         .contextMenu {
             Button(checked ? "Mark Open" : "Complete") { toggle() }
+            Button("Copy") { copy() }
             Button("Add Subtask") {
                 withAnimation(.spring(response: 0.3)) { expanded = true }
                 subCtl.focus()
@@ -149,13 +156,25 @@ struct TaskRow: View {
         }
     }
 
+    private func copy() {
+        var text = task.title
+        if !task.subtasks.isEmpty {
+            text += "\n" + task.subtasks.map { "- " + $0.title }.joined(separator: "\n")
+        }
+        LinkFormat.copy(text)
+        withAnimation(.easeOut(duration: 0.15)) { copied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation(.easeOut(duration: 0.2)) { copied = false }
+        }
+    }
+
     private func toggle() {
         let new = !checked
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { pending = new }
         if new { Feedback.check() }
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.7)) { pending = new }
         // Let the check animation play before the row slides into the done section.
         let id = task.id
-        DispatchQueue.main.asyncAfter(deadline: .now() + (new ? 0.6 : 0.05)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (new ? 0.42 : 0.05)) {
             guard pending == new else { return }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
                 store.setDone(id, new)
@@ -191,14 +210,14 @@ struct SubtaskRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            CheckBox(checked: sub.done, size: 14) {
+            CheckBox(checked: sub.done, baseSize: 14) {
                 if !sub.done { Feedback.check() }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { store.toggleSubtask(taskID, sub.id) }
             }
             Group {
                 if sub.done {
-                    Text(LinkFormat.plain(sub.title)).font(.mono(12)).lineSpacing(2)
-                        .foregroundStyle(t.muted).strikethrough(true, color: t.muted)
+                    RichField(text: .constant(sub.title), size: 12, color: t.muted, accent: t.accent.opacity(0.75),
+                              readOnly: true, strike: true)
                 } else {
                     RichField(text: store.subtaskBinding(taskID, sub.id), size: 12, color: t.text, accent: t.accent, inline: true)
                 }
@@ -253,6 +272,7 @@ struct PopoverRowStyle: ButtonStyle {
         configuration.label
             .background(RoundedRectangle(cornerRadius: 6).fill(hover || configuration.isPressed ? t.raised : .clear))
             .onHover { hover = $0 }
+            .handCursor()
     }
 }
 
@@ -261,10 +281,12 @@ struct PopoverRowStyle: ButtonStyle {
 struct CheckBox: View {
     @Environment(\.theme) private var t
     let checked: Bool
-    var size: CGFloat = 18
+    var baseSize: CGFloat = 18
     let action: () -> Void
     @State private var burst = 0
     @State private var hover = false
+
+    private var size: CGFloat { baseSize * UIScale.factor }
 
     var body: some View {
         Button(action: action) {
@@ -292,6 +314,7 @@ struct CheckBox: View {
             .contentShape(Rectangle().size(width: size + 8, height: size + 8).offset(x: -4, y: -4))
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { hover = $0 }
         .onChange(of: checked) { _, new in if new { burst += 1 } }
     }

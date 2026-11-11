@@ -4,12 +4,13 @@ struct RootView: View {
     @Environment(\.theme) private var t
     @AppStorage(Prefs.opacity) private var opacity = 1.0
     @AppStorage(Prefs.blur) private var blur = true
+    @AppStorage(UIScale.key) private var uiScale = 1.0
 
     var body: some View {
         let translucent = opacity < 0.999
         HStack(spacing: 0) {
             SidebarView()
-                .frame(width: 228)
+                .frame(width: 228 * uiScale)
                 .background(t.panel)
             Rectangle().fill(t.border).frame(width: 1)
             MainView()
@@ -25,6 +26,7 @@ struct RootView: View {
         .background(WindowTranslucency(translucent: translucent))
         .foregroundStyle(t.text)
         .ignoresSafeArea()
+        .id(uiScale)
         .frame(minWidth: 780, minHeight: 520)
         .tint(t.accent)
     }
@@ -56,6 +58,9 @@ struct SidebarView: View {
                 SidebarRow(bucket: b)
             }
             .padding(.horizontal, 8)
+
+            SectionLabel("notes").padding(.horizontal, 14).padding(.top, 18).padding(.bottom, 4)
+            NotesRow().padding(.horizontal, 8)
 
             Spacer()
 
@@ -97,10 +102,11 @@ struct SidebarRow: View {
     @State private var targeted = false
 
     var body: some View {
-        let selected = store.selected == bucket
+        let selected = store.selected == bucket && !store.showNotes
         let count = store.open(bucket).count
         Button {
             store.selected = bucket
+            store.showNotes = false
         } label: {
             HStack(spacing: 10) {
                 FAIcon(bucket.icon, size: 12)
@@ -138,6 +144,7 @@ struct SidebarRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { hover = $0 }
         .animation(.easeOut(duration: 0.12), value: hover)
         .animation(.spring(response: 0.3), value: count)
@@ -180,6 +187,7 @@ struct IconToggle: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { hover = $0 }
         .help(help)
     }
@@ -203,6 +211,7 @@ struct HoverIconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { hover = $0 }
         .help(help)
     }
@@ -211,4 +220,34 @@ struct HoverIconButton: View {
 private struct ThemeSettingsPopover: View {
     @Environment(\.theme) private var t
     var body: some View { ThemeSettings().background(t.panel) }
+}
+
+struct NotesRow: View {
+    @EnvironmentObject private var store: Store
+    @Environment(\.theme) private var t
+    @State private var hover = false
+
+    var body: some View {
+        let selected = store.showNotes
+        Button { store.showNotes = true } label: {
+            HStack(spacing: 10) {
+                FAIcon("note-sticky", size: 12).foregroundStyle(selected ? t.accent : t.muted).frame(width: 16)
+                Text("scratchpad").font(.mono(12.5, selected ? .semibold : .regular)).foregroundStyle(selected ? t.text : t.muted)
+                Spacer()
+                if !store.notes.isEmpty {
+                    Text("\(store.notes.count)").font(.mono(10.5, .semibold)).foregroundStyle(selected ? t.accent : t.faint)
+                }
+                Text("\u{2318}5").font(.mono(10)).foregroundStyle(t.faint).opacity(hover ? 1 : 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7).fill(selected ? t.raised : hover ? t.raised.opacity(0.6) : .clear))
+            .overlay(alignment: .leading) {
+                if selected { RoundedRectangle(cornerRadius: 2).fill(t.accent).frame(width: 3, height: 14).offset(x: -1) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .onHover { hover = $0 }
+    }
 }

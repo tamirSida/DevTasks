@@ -131,8 +131,9 @@ struct FAIcon: View {
     }
 
     var body: some View {
+        let s = size * UIScale.factor
         Text(FA.glyph(name))
-            .font(.custom(FA.fontName(for: name), fixedSize: size))
-            .frame(minWidth: size * 1.15)
+            .font(.custom(FA.fontName(for: name), fixedSize: s))
+            .frame(minWidth: s * 1.15)
     }
 }

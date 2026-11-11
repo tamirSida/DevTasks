@@ -86,6 +86,7 @@ struct ActionChip: View {
             ChipLabel(icon: action.icon, title: action.title, hover: hover)
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .help(action.url)
     }
@@ -103,6 +104,7 @@ struct FolderChip: View {
             ChipLabel(icon: folder.icon, title: folder.title, folder: true, hover: hover, open: show)
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .popover(isPresented: $show, arrowEdge: .bottom) {
             ThemeProvider(translucent: false) {
@@ -147,13 +149,15 @@ struct FolderMenu: View {
                     Button { links.forEach(open); close() } label: {
                         HStack(spacing: 6) { FAIcon("arrow-up-right-from-square", size: 9); Text("open all").font(.mono(11)) }
                     }
-                    .buttonStyle(.plain).foregroundStyle(t.muted)
+                    .buttonStyle(.plain)
+        .handCursor().foregroundStyle(t.muted)
                 }
                 Spacer()
                 Button(action: edit) {
                     HStack(spacing: 6) { FAIcon("pen", size: 9); Text("edit").font(.mono(11)) }
                 }
-                .buttonStyle(.plain).foregroundStyle(t.muted)
+                .buttonStyle(.plain)
+        .handCursor().foregroundStyle(t.muted)
             }
             .padding(.horizontal, 8)
         }
@@ -184,6 +188,7 @@ struct AddChip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .handCursor()
         .onHover { hover = $0 }
         .help("add a link or a folder of links")
         .popover(isPresented: $show, arrowEdge: .bottom) {
@@ -308,11 +313,13 @@ struct ActionEditor: View {
                         store.deleteAction(draft.id)
                         dismiss()
                     }
-                    .buttonStyle(.plain).font(.mono(12)).foregroundStyle(t.danger)
+                    .buttonStyle(.plain)
+        .handCursor().font(.mono(12)).foregroundStyle(t.danger)
                 }
                 Spacer()
                 Button("cancel") { dismiss() }
-                    .buttonStyle(.plain).font(.mono(12)).foregroundStyle(t.muted)
+                    .buttonStyle(.plain)
+        .handCursor().font(.mono(12)).foregroundStyle(t.muted)
                     .keyboardShortcut(.cancelAction)
                     .padding(.trailing, 10)
                 Button(action: save) {
@@ -323,6 +330,7 @@ struct ActionEditor: View {
                         .opacity(valid ? 1 : 0.4)
                 }
                 .buttonStyle(.plain)
+        .handCursor()
                 .disabled(!valid)
                 .keyboardShortcut(.defaultAction)
             }
@@ -366,6 +374,7 @@ struct ActionEditor: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+        .handCursor()
                             .help("pick an icon for this link below")
                             MiniField(text: childBinding(i, \.title), prompt: "title").frame(width: 130)
                             MiniField(text: childBinding(i, \.url), prompt: "https://...")
@@ -386,6 +395,7 @@ struct ActionEditor: View {
                     .foregroundStyle(t.accent)
             }
             .buttonStyle(.plain)
+        .handCursor()
         }
     }
 
@@ -412,6 +422,7 @@ struct ActionEditor: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+        .handCursor()
                     }
                 }
                 .padding(2)
@@ -439,6 +450,7 @@ struct ActionEditor: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+        .handCursor()
                         .help(e.name)
                     }
                 }

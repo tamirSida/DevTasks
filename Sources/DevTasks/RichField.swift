@@ -31,61 +31,10 @@ final class FieldController: ObservableObject {
     }
 }
 
-enum LinkFormat {
-    private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-
-    static func matches(_ s: String) -> [NSTextCheckingResult] {
-        detector?.matches(in: s, range: NSRange(location: 0, length: (s as NSString).length)) ?? []
-    }
-
-    /// "https://github.com/acme/api/pull/412" -> "github.com/…/pull/412"
-    static func shortLabel(_ url: URL, original: String) -> String {
-        var label: String
-        if let host = url.host {
-            let h = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-            let comps = url.path.split(separator: "/").map(String.init)
-            if comps.isEmpty { label = h }
-            else if comps.count <= 2 { label = h + "/" + comps.joined(separator: "/") }
-            else { label = h + "/\u{2026}/" + comps.suffix(2).joined(separator: "/") }
-        } else {
-            label = original
-        }
-        if label.count > 48 { label = String(label.prefix(45)) + "\u{2026}" }
-        return label
-    }
-
-    private static func segments(_ s: String) -> [(text: String, url: URL?)] {
-        let ns = s as NSString
-        var out: [(String, URL?)] = []
-        var cursor = 0
-        for m in matches(s) {
-            guard let url = m.url else { continue }
-            if m.range.location > cursor {
-                out.append((ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor)), nil))
-            }
-            out.append((shortLabel(url, original: ns.substring(with: m.range)), url))
-            cursor = NSMaxRange(m.range)
-        }
-        if cursor < ns.length { out.append((ns.substring(from: cursor), nil)) }
-        return out
-    }
-
-    static func display(_ s: String, base: [NSAttributedString.Key: Any]) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        for seg in segments(s) {
-            var a = base
-            if let u = seg.url { a[.link] = u }
-            out.append(NSAttributedString(string: seg.text, attributes: a))
-        }
-        return out
-    }
-
-    /// Text with URLs replaced by their short labels (for read-only SwiftUI Text).
-    static func plain(_ s: String) -> String { segments(s).map(\.text).joined() }
-}
-
 final class LinkTextView: NSTextView {
     var inline = false
+    /// Display only (done items): links open, other clicks do nothing.
+    var readOnly = false
     private(set) var editingMode = true
     var fullText = ""
     var baseAttributes: [NSAttributedString.Key: Any] = [:]
@@ -122,6 +71,7 @@ final class LinkTextView: NSTextView {
             super.mouseDown(with: event) // opens the link
             return
         }
+        if readOnly { return }
         let samePositions = (textStorage?.string ?? "") == fullText
         enterEditing()
         window?.makeFirstResponder(self)
@@ -135,6 +85,28 @@ final class LinkTextView: NSTextView {
         let ok = super.becomeFirstResponder()
         if ok && editingMode { onFocusChange?(true) }
         return ok
+    }
+
+    /// Rich paste: embedded links (Azure DevOps titles, Teams, browsers) become [text](url).
+    override func paste(_ sender: Any?) {
+        if editingMode, let md = LinkFormat.fromPasteboard() {
+            insertText(md, replacementRange: selectedRange())
+            return
+        }
+        super.paste(sender)
+    }
+
+    /// Copying text with links puts real embedded links on the clipboard.
+    override func copy(_ sender: Any?) {
+        let sel = selectedRange()
+        guard sel.length > 0, let ts = textStorage else { return super.copy(sender) }
+        if editingMode {
+            LinkFormat.copy((string as NSString).substring(with: sel))
+        } else if let md = LinkFormat.markdown(from: ts.attributedSubstring(from: sel)) {
+            LinkFormat.copy(md)
+        } else {
+            super.copy(sender)
+        }
     }
 
     override func resignFirstResponder() -> Bool {
@@ -154,6 +126,8 @@ struct RichField: NSViewRepresentable {
     var accent: Color
     /// Show short clickable links when not editing (task titles). Off for input bars.
     var inline = false
+    var readOnly = false
+    var strike = false
     var controller: FieldController? = nil
     /// Autocomplete options for the current @token (empty hides the menu).
     var suggestions: [String] = []
@@ -162,7 +136,7 @@ struct RichField: NSViewRepresentable {
     var onSubmit: (() -> Void)? = nil
     var onFocus: ((Bool) -> Void)? = nil
 
-    private var font: NSFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
+    private var font: NSFont { .monospacedSystemFont(ofSize: size * UIScale.factor, weight: .regular) }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -185,10 +159,11 @@ struct RichField: NSViewRepresentable {
         tv.isHorizontallyResizable = false
         tv.isVerticallyResizable = false
         tv.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        tv.inline = inline
+        tv.inline = inline || readOnly
+        tv.readOnly = readOnly
         tv.fullText = text
         applyStyle(tv, context.coordinator)
-        if inline { tv.showDisplay() } else { tv.string = text }
+        if inline || readOnly { tv.showDisplay() } else { tv.string = text }
         tv.onFocusChange = { [weak coordinator = context.coordinator] f in coordinator?.parent.onFocus?(f) }
         controller?.textView = tv
         return tv
@@ -215,12 +190,16 @@ struct RichField: NSViewRepresentable {
     /// Returns true when colors/size changed and existing text needs restyling.
     @discardableResult
     private func applyStyle(_ tv: LinkTextView, _ c: Coordinator) -> Bool {
-        let key = "\(color)|\(accent)|\(size)"
+        let key = "\(color)|\(accent)|\(font.pointSize)|\(strike)"
         guard key != c.styleKey else { return false }
         c.styleKey = key
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 2
-        let base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(color), .paragraphStyle: para]
+        var base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(color), .paragraphStyle: para]
+        if strike {
+            base[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            base[.strikethroughColor] = NSColor(color)
+        }
         tv.baseAttributes = base
         tv.typingAttributes = base
         tv.font = font
@@ -328,6 +307,34 @@ struct RichField: NSViewRepresentable {
                 return true
             default:
                 return false
+            }
+        }
+    }
+}
+
+/// Clicking anywhere outside a task title that is being edited ends editing.
+enum OutsideClick {
+    private static var monitor: Any?
+
+    static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { e in
+            if let w = e.window, let tv = w.firstResponder as? LinkTextView, tv.inline, tv.editingMode {
+                let p = tv.convert(e.locationInWindow, from: nil)
+                if !tv.bounds.contains(p) { w.makeFirstResponder(nil) }
+            }
+            return e
+        }
+    }
+}
+
+extension View {
+    /// Pointing-hand cursor while hovering (macOS shows an arrow over buttons by default).
+    func handCursor() -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active: NSCursor.pointingHand.set()
+            case .ended: NSCursor.arrow.set()
             }
         }
     }

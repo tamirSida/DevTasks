@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when launched as a bare binary via `swift run`.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        OutsideClick.install()
+        Feedback.preload()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -30,14 +32,19 @@ struct DevTasksApp: App {
         .defaultSize(width: 980, height: 680)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Task") { store.focusQuickAdd += 1 }
+                Button("New Task") { store.showNotes = false; store.focusQuickAdd += 1 }
                     .keyboardShortcut("n")
+                Button("New Note") { store.newNote() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandMenu("Lists") {
                 ForEach(Bucket.allCases) { b in
-                    Button(b.title) { store.selected = b }
+                    Button(b.title) { store.selected = b; store.showNotes = false }
                         .keyboardShortcut(KeyEquivalent(b.key))
                 }
+                Divider()
+                Button("Scratchpad") { store.showNotes = true }
+                    .keyboardShortcut("5")
             }
             CommandGroup(after: .sidebar) {
                 Button("Cycle Appearance") { appearance = appearance.next }

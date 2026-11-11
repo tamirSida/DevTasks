@@ -1,10 +1,12 @@
 import Foundation
+import AppKit
 
 /// `devtasks <command>`: the same binary as the app, run from a terminal or by an agent.
 enum CLI {
     static let commands: Set<String> = [
         "add", "list", "ls", "done", "undo", "reopen", "move", "mv", "edit", "rename", "rm", "delete",
         "sub", "clear", "action", "actions", "mcp", "path", "help", "--help", "-h", "version", "--version",
+        "paste", "copy", "note", "notes",
     ]
 
     static func handles(_ args: [String]) -> Bool {
@@ -23,6 +25,7 @@ enum CLI {
         func has(_ names: String...) -> Bool { names.contains { flags.contains($0) } }
     }
 
+    static let boolFlags: Set<String> = ["--json", "-j", "--all", "-a"]
     static let valueOptions: Set<String> = ["--list", "-l", "--sub", "-s", "--icon", "-i", "--in"]
 
     /// Lets shell users type \n for a line break.
@@ -38,7 +41,7 @@ enum CLI {
                 i += 2
                 continue
             }
-            if x.hasPrefix("-") && x.count > 1 && Int(x) == nil { a.flags.insert(x) } else { a.positional.append(x) }
+            if boolFlags.contains(x) { a.flags.insert(x) } else { a.positional.append(x) }
             i += 1
         }
         return a
@@ -73,6 +76,22 @@ enum CLI {
                                            subtasks: a.all("--sub", "-s").map(unescape))
                 emit(t, json, verb: "added")
 
+            case "paste":
+                // Clipboard -> task, keeping embedded links (e.g. a copied Azure DevOps work item).
+                let pb = NSPasteboard.general
+                guard let text = LinkFormat.fromPasteboard(pb) ?? pb.string(forType: .string),
+                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw DTError("clipboard is empty")
+                }
+                let list = try bucket(a.value("--list", "-l") ?? a.positional.first)
+                emit(try TaskDB.addTask(text, list: list), json, verb: "added")
+
+            case "copy":
+                let d = try TaskDB.read()
+                let t = d.tasks[try TaskDB.index(of: try refs(a)[0], in: d.tasks)]
+                LinkFormat.copy(t.title)
+                print(json ? TaskDB.jsonString(TaskDB.json(t)) : "copied \(t.shortID)  \(LinkFormat.plain(t.title))")
+
             case "list", "ls":
                 let d = try TaskDB.read()
                 let which = a.positional.first
@@ -103,6 +122,8 @@ enum CLI {
                 let n = try TaskDB.clearDone(try bucket(a.positional.first == "all" ? nil : a.positional.first))
                 print(json ? TaskDB.jsonString(["removed": n]) : "cleared \(n) done task\(n == 1 ? "" : "s")")
 
+            case "note", "notes":
+                try runNote(a, json)
             case "sub":
                 try runSub(a, json)
             case "action", "actions":
@@ -139,6 +160,37 @@ enum CLI {
         case "undo", "reopen": emit(try TaskDB.setSubtaskDone(p[1], rest, false), json, verb: "subtask reopened in")
         case "rm", "delete": emit(try TaskDB.deleteSubtask(p[1], rest), json, verb: "subtask removed from")
         default: throw DTError("unknown sub command '\(p[0])'")
+        }
+    }
+
+    private static func runNote(_ a: Args, _ json: Bool) throws {
+        let p = a.positional
+        switch p.first ?? "list" {
+        case "list", "ls":
+            let notes = try TaskDB.read().notes
+            if json { print(TaskDB.jsonString(notes.map(TaskDB.json))); return }
+            if notes.isEmpty { print("no notes") }
+            for n in notes { print("\(n.shortID)  \(n.title)") }
+        case "add", "new":
+            var text = unescape(p.dropFirst().joined(separator: " "))
+            if text.isEmpty, isatty(0) == 0 { text = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self) }
+            let n = try TaskDB.addNote(text)
+            print(json ? TaskDB.jsonString(TaskDB.json(n)) : "added note \(n.shortID)  \(n.title)")
+        case "show", "cat":
+            guard p.count >= 2 else { throw DTError("usage: devtasks note show <note>") }
+            let d = try TaskDB.read()
+            let n = d.notes[try TaskDB.noteIndex(of: p.dropFirst().joined(separator: " "), in: d.notes)]
+            print(json ? TaskDB.jsonString(TaskDB.json(n)) : n.text)
+        case "append":
+            guard p.count >= 3 else { throw DTError("usage: devtasks note append <note> <text>") }
+            let n = try TaskDB.appendNote(p[1], unescape(p.dropFirst(2).joined(separator: " ")))
+            print(json ? TaskDB.jsonString(TaskDB.json(n)) : "appended to \(n.shortID)  \(n.title)")
+        case "rm", "delete":
+            guard p.count >= 2 else { throw DTError("usage: devtasks note rm <note>") }
+            let n = try TaskDB.deleteNote(p.dropFirst().joined(separator: " "))
+            print(json ? TaskDB.jsonString(TaskDB.json(n)) : "deleted note \(n.title)")
+        default:
+            throw DTError("usage: devtasks note [list | add <text> | show <note> | append <note> <text> | rm <note>]")
         }
     }
 
@@ -227,12 +279,25 @@ enum CLI {
       devtasks action folder <title> [--icon <name>]      a dropdown of links
       devtasks action rm <action>
 
+    notes
+      devtasks note list
+      devtasks note add <text>         (or pipe text in: pbpaste | devtasks note add)
+      devtasks note show <note>
+      devtasks note append <note> <text>
+      devtasks note rm <note>
+
+    clipboard
+      devtasks paste [list]            add a task from the clipboard, keeping embedded links
+                                       (copy a work item title in Azure DevOps, then run this)
+      devtasks copy <task>             copy a task; links stay clickable when pasted in chats
+
     other
       devtasks mcp                     run as an MCP server (stdio)
       devtasks path                    print the data file location
 
     <task> is an id prefix from `list` (e.g. a1b2c3) or any unique part of the title.
     Use \\n in titles for a line break. URLs in titles become clickable links in the app.
+    Use [text](url) for a link with its own label, e.g. [PBI 1234: Fix login](https://dev.azure.com/...).
     Add --json to any command for machine-readable output.
     """
 }

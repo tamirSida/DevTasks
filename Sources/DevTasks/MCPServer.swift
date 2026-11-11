@@ -96,6 +96,14 @@ enum MCPServer {
             return TaskDB.json(try TaskDB.setSubtaskDone(try str(a, "task"), try subRef(a), a["done"] as? Bool ?? true))
         case "delete_subtask":
             return TaskDB.json(try TaskDB.deleteSubtask(try str(a, "task"), try subRef(a)))
+        case "list_notes":
+            return try TaskDB.read().notes.map(TaskDB.json)
+        case "add_note":
+            return TaskDB.json(try TaskDB.addNote(try str(a, "text")))
+        case "append_note":
+            return TaskDB.json(try TaskDB.appendNote(try str(a, "note"), try str(a, "text")))
+        case "delete_note":
+            return TaskDB.json(try TaskDB.deleteNote(try str(a, "note")))
         case "list_quick_actions":
             return try TaskDB.read().actions.map(TaskDB.json)
         case "add_quick_action":
@@ -156,6 +164,11 @@ enum MCPServer {
             tool("complete_subtask", "Check (or with done=false, uncheck) a subtask.",
                  ["task": taskRef, "subtask": subRefSchema, "done": ["type": "boolean"]], ["task", "subtask"]),
             tool("delete_subtask", "Remove a subtask.", ["task": taskRef, "subtask": subRefSchema], ["task", "subtask"]),
+            tool("list_notes", "List notes from the notepad (id, title = first line, full text).", readOnly: true),
+            tool("add_note", "Create a note. The first line becomes its title.", ["text": ["type": "string"]], ["text"]),
+            tool("append_note", "Append text to an existing note.",
+                 ["note": ["type": "string", "description": "Note id or part of its text"], "text": ["type": "string"]], ["note", "text"]),
+            tool("delete_note", "Delete a note.", ["note": ["type": "string", "description": "Note id or part of its text"]], ["note"]),
             tool("list_quick_actions", "List the quick-action link buttons.", readOnly: true),
             tool("add_quick_action", "Add a quick-action link button to the app.",
                  ["title": ["type": "string"],

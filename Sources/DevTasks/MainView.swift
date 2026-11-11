@@ -6,6 +6,19 @@ struct MainView: View {
     @State private var showDone = true
 
     var body: some View {
+        if store.showNotes {
+            VStack(alignment: .leading, spacing: 0) {
+                QuickActionsBar()
+                    .padding(.top, 38)
+                    .padding(.horizontal, 28)
+                NotesView()
+            }
+        } else {
+            tasksBody
+        }
+    }
+
+    @ViewBuilder private var tasksBody: some View {
         let bucket = store.selected
         let open = store.open(bucket)
         let done = store.done(bucket)
@@ -56,11 +69,13 @@ struct MainView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+        .handCursor()
                             Spacer()
                             Button("clear") {
                                 withAnimation(.spring(response: 0.35)) { store.clearDone(bucket) }
                             }
                             .buttonStyle(.plain)
+        .handCursor()
                             .font(.mono(11)).foregroundStyle(t.faint)
                         }
                         .padding(.top, 18).padding(.bottom, 4).padding(.horizontal, 4)
@@ -258,6 +273,7 @@ struct ListSuggestions: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+        .handCursor()
             }
         }
         .padding(5)

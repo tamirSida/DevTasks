@@ -291,6 +291,46 @@ enum TaskDB {
         }
     }
 
+    // MARK: notes
+
+    static func noteIndex(of ref: String, in notes: [Note]) throws -> Int {
+        let r = ref.lowercased().trimmingCharacters(in: .whitespaces)
+        if r.count >= 4, r.allSatisfy(\.isHexDigit), let i = notes.indices.filter({ notes[$0].shortID.hasPrefix(r) || notes[$0].id.uuidString.lowercased().replacingOccurrences(of: "-", with: "").hasPrefix(r) }).onlyOne { return i }
+        let hits = notes.indices.filter { notes[$0].text.lowercased().contains(r) }
+        if let i = hits.filter({ notes[$0].title.lowercased().contains(r) }).onlyOne ?? hits.onlyOne { return i }
+        if hits.isEmpty { throw DTError("no note matches '\(ref)'") }
+        let list = hits.prefix(8).map { "  \(notes[$0].shortID)  \(notes[$0].title)" }.joined(separator: "\n")
+        throw DTError("'\(ref)' matches \(hits.count) notes, use an id:\n\(list)")
+    }
+
+    static func addNote(_ text: String) throws -> Note {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { throw DTError("note is empty") }
+        let n = Note(text: t)
+        try write { $0.notes.insert(n, at: 0) }
+        return n
+    }
+
+    static func appendNote(_ ref: String, _ text: String) throws -> Note {
+        try write { d in
+            let i = try noteIndex(of: ref, in: d.notes)
+            d.notes[i].text += (d.notes[i].text.hasSuffix("\n") || d.notes[i].text.isEmpty ? "" : "\n") + text
+            d.notes[i].updatedAt = Date()
+            return d.notes[i]
+        }
+    }
+
+    static func deleteNote(_ ref: String) throws -> Note {
+        try write { d in
+            let i = try noteIndex(of: ref, in: d.notes)
+            return d.notes.remove(at: i)
+        }
+    }
+
+    static func json(_ n: Note) -> [String: Any] {
+        ["id": n.shortID, "title": n.title, "text": n.text, "updatedAt": ISO8601DateFormatter().string(from: n.updatedAt)]
+    }
+
     // MARK: JSON views (for --json and MCP)
 
     static func json(_ t: TaskItem) -> [String: Any] {

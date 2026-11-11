@@ -73,6 +73,34 @@ struct Theme: Identifiable {
         Theme("gruvbox", "Gruvbox", dark: true,
               bg: 0x282828, panel: 0x1D2021, raised: 0x32302F, border: 0x3C3836, text: 0xEBDBB2, muted: 0xA89984,
               faint: 0x665C54, accent: 0xB8BB26, accentInk: 0x1D2021, danger: 0xFB4934, warn: 0xFABD2F, info: 0x83A598),
+        // High contrast, neutral greys: no blue cast on IPS panels (e.g. LG 1440p monitors).
+        Theme("midnight", "Midnight", dark: true,
+              bg: 0x000000, panel: 0x0A0A0A, raised: 0x151515, border: 0x262626, text: 0xF5F5F5, muted: 0xA3A3A3,
+              faint: 0x5E5E5E, accent: 0x5EF2A6, accentInk: 0x00170B, danger: 0xFF6B6B, warn: 0xFFC861, info: 0x6CB6FF),
+        Theme("graphite", "Graphite", dark: true,
+              bg: 0x1B1B1B, panel: 0x212121, raised: 0x2A2A2A, border: 0x383838, text: 0xEDEDED, muted: 0xA0A0A0,
+              faint: 0x636363, accent: 0x4FD1C5, accentInk: 0x0D1F1D, danger: 0xF87171, warn: 0xFBBF24, info: 0x60A5FA),
+        Theme("github-dimmed", "GitHub Dimmed", dark: true,
+              bg: 0x22272E, panel: 0x1C2128, raised: 0x2D333B, border: 0x373E47, text: 0xCDD9E5, muted: 0x8B97A3,
+              faint: 0x545D68, accent: 0x539BF5, accentInk: 0x1C2128, danger: 0xE5534B, warn: 0xDAAA3F, info: 0xB083F0),
+        Theme("ayu-dark", "Ayu Dark", dark: true,
+              bg: 0x0D1017, panel: 0x0B0E14, raised: 0x151A23, border: 0x1F2430, text: 0xBFBDB6, muted: 0x8A8F98,
+              faint: 0x565B66, accent: 0xE6B450, accentInk: 0x0D1017, danger: 0xF07178, warn: 0xFFB454, info: 0x59C2FF),
+        Theme("kanagawa", "Kanagawa", dark: true,
+              bg: 0x1F1F28, panel: 0x16161D, raised: 0x2A2A37, border: 0x363646, text: 0xDCD7BA, muted: 0xA09F94,
+              faint: 0x727169, accent: 0x98BB6C, accentInk: 0x16161D, danger: 0xE46876, warn: 0xE6C384, info: 0x7E9CD8),
+        Theme("rose-pine", "Rose Pine", dark: true,
+              bg: 0x191724, panel: 0x1F1D2E, raised: 0x26233A, border: 0x403D52, text: 0xE0DEF4, muted: 0x908CAA,
+              faint: 0x6E6A86, accent: 0xEBBCBA, accentInk: 0x191724, danger: 0xEB6F92, warn: 0xF6C177, info: 0x9CCFD8),
+        Theme("everforest", "Everforest", dark: true,
+              bg: 0x2D353B, panel: 0x272E33, raised: 0x343F44, border: 0x475258, text: 0xD3C6AA, muted: 0x9DA9A0,
+              faint: 0x7A8478, accent: 0xA7C080, accentInk: 0x232A2E, danger: 0xE67E80, warn: 0xDBBC7F, info: 0x7FBBB3),
+        Theme("monokai-pro", "Monokai Pro", dark: true,
+              bg: 0x2D2A2E, panel: 0x221F22, raised: 0x363337, border: 0x403E41, text: 0xFCFCFA, muted: 0x939293,
+              faint: 0x727072, accent: 0xA9DC76, accentInk: 0x221F22, danger: 0xFF6188, warn: 0xFFD866, info: 0x78DCE8),
+        Theme("solarized-dark", "Solarized Dark", dark: true,
+              bg: 0x002B36, panel: 0x00252F, raised: 0x073642, border: 0x0E4452, text: 0x93A1A1, muted: 0x839496,
+              faint: 0x586E75, accent: 0x2AA198, accentInk: 0x002B36, danger: 0xDC322F, warn: 0xB58900, info: 0x268BD2),
         light,
         Theme("github-light", "GitHub Light", dark: false,
               bg: 0xF6F8FA, panel: 0xFFFFFF, raised: 0xEEF1F4, border: 0xD0D7DE, text: 0x1F2328, muted: 0x59636E,
@@ -98,9 +126,19 @@ extension Color {
     }
 }
 
+/// Global text size (Settings > text size). Read on every render; RootView rebuilds when it changes.
+enum UIScale {
+    static let key = "uiScale"
+    static let options: [(label: String, value: Double)] = [("S", 0.92), ("M", 1.0), ("L", 1.12), ("XL", 1.25)]
+    static var factor: CGFloat {
+        let v = UserDefaults.standard.double(forKey: key)
+        return v > 0 ? v : 1
+    }
+}
+
 extension Font {
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        .system(size: size * UIScale.factor, weight: weight, design: .monospaced)
     }
 }
 
@@ -199,8 +237,10 @@ struct ThemeSettings: View {
     @AppStorage(Prefs.lightTheme) private var lightID = Theme.light.id
     @AppStorage(Prefs.opacity) private var opacity = 1.0
     @AppStorage(Prefs.blur) private var blur = true
+    @AppStorage(UIScale.key) private var uiScale = 1.0
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("appearance").font(.mono(13, .bold))
@@ -229,9 +269,31 @@ struct ThemeSettings: View {
                 .toggleStyle(.checkbox)
                 .disabled(opacity >= 0.999)
             }
+
+            HStack {
+                SectionLabel("text size")
+                Spacer()
+                HStack(spacing: 4) {
+                    ForEach(UIScale.options, id: \.label) { o in
+                        let on = abs(uiScale - o.value) < 0.01
+                        Button { uiScale = o.value } label: {
+                            Text(o.label).font(.system(size: 11, weight: on ? .bold : .regular, design: .monospaced))
+                                .foregroundStyle(on ? t.accentInk : t.muted)
+                                .frame(width: 30, height: 22)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(on ? t.accent : .clear))
+                                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(on ? t.accent : t.border))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .handCursor()
+                    }
+                }
+            }
         }
         .padding(18)
-        .frame(width: 380)
+        }
+        .frame(width: 420)
+        .frame(maxHeight: 640)
         .foregroundStyle(t.text)
     }
 
@@ -279,5 +341,6 @@ struct ThemeSwatch: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .handCursor()
     }
 }
