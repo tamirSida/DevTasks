@@ -27,6 +27,66 @@ To work on it in Xcode, open `Package.swift`.
 - Move tasks by dragging them onto a list in the sidebar, or with the hover / right-click menu.
 - Appearance: system, light or dark.
 
+## Agents and the CLI
+
+`./build.sh --install` also installs:
+
+- **`devtasks` CLI** in `/usr/local/bin` (or `~/.local/bin` if that is not writable). It is the app binary itself, run from the terminal.
+- **Claude Code skill** in `~/.claude/skills/devtasks` (if `~/.claude` exists). It tells the agent how to use the CLI.
+
+Every change goes to the same data file, and the open app updates within a fraction of a second.
+
+```bash
+devtasks add "fix flaky e2e" @tomorrow --sub "find seed" --sub "pin retries"
+devtasks list --json
+devtasks done flaky
+devtasks sub done flaky 1
+devtasks move a1b2c3 week
+devtasks action add Grafana https://grafana.example.com --icon chart-line
+devtasks help
+```
+
+### MCP server
+
+`devtasks mcp` runs an MCP server over stdio with these tools: `list_tasks`, `add_task`, `complete_task`, `reopen_task`,
+`move_task`, `rename_task`, `delete_task`, `clear_done`, `add_subtask`, `complete_subtask`, `delete_subtask`,
+`list_quick_actions`, `add_quick_action` and `delete_quick_action`.
+
+The configs below use the full path to the binary, so they work even when the agent doesn't load your shell PATH.
+
+**GitHub Copilot CLI** - add to `~/.copilot/mcp-config.json` (or run `/mcp add` inside copilot):
+
+```json
+{
+  "mcpServers": {
+    "devtasks": {
+      "type": "local",
+      "command": "/Applications/DevTasks.app/Contents/MacOS/DevTasks",
+      "args": ["mcp"],
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+**VS Code Copilot** - `.vscode/mcp.json` in a workspace, or the user-level MCP config:
+
+```json
+{
+  "servers": {
+    "devtasks": { "type": "stdio", "command": "/Applications/DevTasks.app/Contents/MacOS/DevTasks", "args": ["mcp"] }
+  }
+}
+```
+
+**Claude Code** - the skill already covers it. If you'd rather use MCP:
+
+```bash
+claude mcp add --scope user devtasks -- /Applications/DevTasks.app/Contents/MacOS/DevTasks mcp
+```
+
+**Cursor / others** - command `/Applications/DevTasks.app/Contents/MacOS/DevTasks`, args `["mcp"]`.
+
 ## Shortcuts
 
 | Keys | Action |
@@ -46,10 +106,11 @@ Set `DEVTASKS_DATA_DIR` to use a different folder (handy for testing).
 
 ```
 Package.swift
-Sources/DevTasks/      SwiftUI app
+Sources/DevTasks/      SwiftUI app + CLI (CLI.swift) + MCP server (MCPServer.swift)
 Resources/             Font Awesome Solid TTF, app icon
 scripts/gen_icons.py   regenerates the icon-name map from a Font Awesome all.css
 scripts/make_icon.swift regenerates Resources/AppIcon.icns
+agent/skills/devtasks  Claude Code skill (installed by build.sh --install)
 build.sh               builds + bundles + ad-hoc signs the .app
 ```
 

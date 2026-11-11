@@ -36,6 +36,7 @@ struct MainView: View {
 
                     ForEach(open) { task in
                         TaskRow(task: task)
+                            .id("open-\(task.id)")
                             .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
                                                     removal: .opacity.combined(with: .scale(scale: 0.97))))
                     }
@@ -65,7 +66,7 @@ struct MainView: View {
 
                         if showDone {
                             ForEach(done) { task in
-                                TaskRow(task: task).transition(.opacity)
+                                TaskRow(task: task).id("done-\(task.id)").transition(.opacity)
                             }
                         }
                     }

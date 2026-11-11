@@ -108,7 +108,7 @@ struct QuickAction: Identifiable, Codable, Equatable {
 struct AppData: Codable {
     var tasks: [TaskItem] = []
     var actions: [QuickAction] = QuickAction.defaults
-    var lastDay: String = Store.dayKey(Date())
+    var lastDay: String = DataFile.dayKey(Date())
 
     init() {}
 
@@ -116,6 +116,6 @@ struct AppData: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         tasks = try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? []
         actions = try c.decodeIfPresent([QuickAction].self, forKey: .actions) ?? QuickAction.defaults
-        lastDay = try c.decodeIfPresent(String.self, forKey: .lastDay) ?? Store.dayKey(Date())
+        lastDay = try c.decodeIfPresent(String.self, forKey: .lastDay) ?? DataFile.dayKey(Date())
     }
 }

@@ -49,6 +49,22 @@ if [ "${1:-}" = "--install" ]; then
   rm -rf "/Applications/${APP_NAME}.app"
   cp -R "$APP" /Applications/
   echo "done: /Applications/${APP_NAME}.app"
+
+  # CLI: `devtasks` on PATH, pointing at the installed app binary.
+  BIN_DIR=/usr/local/bin
+  [ -w "$BIN_DIR" ] || BIN_DIR="$HOME/.local/bin"
+  mkdir -p "$BIN_DIR"
+  ln -sf "/Applications/${APP_NAME}.app/Contents/MacOS/${APP_NAME}" "$BIN_DIR/devtasks"
+  echo "cli:  $BIN_DIR/devtasks"
+  case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "      note: add $BIN_DIR to your PATH" ;; esac
+
+  # Claude Code skill (only if Claude Code is set up on this Mac).
+  if [ -d "$HOME/.claude" ]; then
+    mkdir -p "$HOME/.claude/skills"
+    rm -rf "$HOME/.claude/skills/devtasks"
+    cp -R agent/skills/devtasks "$HOME/.claude/skills/devtasks"
+    echo "skill: ~/.claude/skills/devtasks"
+  fi
 else
   echo "done: $(pwd)/${APP}"
   echo "run:  open \"${APP}\"   (or ./build.sh --install)"

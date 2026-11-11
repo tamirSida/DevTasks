@@ -17,17 +17,17 @@ struct TaskRow: View {
     @Environment(\.theme) private var t
     let task: TaskItem
 
-    @State private var checked: Bool
+    /// Set only while a click's check animation plays; otherwise the stored task is the truth.
+    @State private var pending: Bool?
     @State private var expanded = false
     @State private var hover = false
     @State private var showMove = false
     @State private var newSub = ""
     @FocusState private var subFocused: Bool
 
-    init(task: TaskItem) {
-        self.task = task
-        _checked = State(initialValue: task.done)
-    }
+    init(task: TaskItem) { self.task = task }
+
+    private var checked: Bool { pending ?? task.done }
 
     private var subDone: Int { task.subtasks.filter(\.done).count }
 
@@ -117,7 +117,6 @@ struct TaskRow: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 9))
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
-        .onChange(of: task.done) { _, new in checked = new }
         .draggable(task.id.uuidString) {
             HStack(spacing: 8) {
                 FAIcon("grip-vertical", size: 10)
@@ -147,12 +146,16 @@ struct TaskRow: View {
 
     private func toggle() {
         let new = !checked
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { checked = new }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { pending = new }
         if new { Feedback.check() }
         // Let the check animation play before the row slides into the done section.
+        let id = task.id
         DispatchQueue.main.asyncAfter(deadline: .now() + (new ? 0.6 : 0.05)) {
-            guard checked == new else { return }
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { store.setDone(task.id, new) }
+            guard pending == new else { return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                store.setDone(id, new)
+                pending = nil
+            }
         }
     }
 }

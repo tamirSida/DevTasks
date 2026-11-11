@@ -2,69 +2,78 @@ import SwiftUI
 import AppKit
 
 final class Store: ObservableObject {
-    @Published var tasks: [TaskItem] = [] { didSet { scheduleSave() } }
-    @Published var actions: [QuickAction] = [] { didSet { scheduleSave() } }
+    @Published var tasks: [TaskItem] = [] { didSet { if !applyingExternal { scheduleSave() } } }
+    @Published var actions: [QuickAction] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var selected: Bucket = .today
     @Published var focusQuickAdd = 0
 
     private var lastDay: String
-    private let fileURL: URL
     private var pendingSave: DispatchWorkItem?
-
-    static var dataDirectory: URL {
-        if let custom = ProcessInfo.processInfo.environment["DEVTASKS_DATA_DIR"], !custom.isEmpty {
-            return URL(fileURLWithPath: custom, isDirectory: true)
-        }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DevTasks", isDirectory: true)
-    }
+    private var applyingExternal = false
+    /// Bytes we last read or wrote; anything else on disk came from the CLI / MCP.
+    private var lastSynced: Data?
+    private var watcher: DispatchSourceFileSystemObject?
 
     init() {
-        let dir = Store.dataDirectory
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        fileURL = dir.appendingPathComponent("data.json")
-
         var data = AppData()
-        if let raw = try? Data(contentsOf: fileURL) {
-            do {
-                data = try Store.decoder.decode(AppData.self, from: raw)
-            } catch {
-                // Never silently overwrite an unreadable file: keep a copy aside.
-                let backup = dir.appendingPathComponent("data.corrupt-\(Int(Date().timeIntervalSince1970)).json")
-                try? FileManager.default.copyItem(at: fileURL, to: backup)
-            }
+        do {
+            data = try DataFile.load()
+        } catch {
+            // Never silently overwrite an unreadable file: keep a copy aside.
+            let backup = DataFile.directory.appendingPathComponent("data.corrupt-\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.copyItem(at: DataFile.url, to: backup)
         }
+        lastSynced = try? Data(contentsOf: DataFile.url)
         tasks = data.tasks
         actions = data.actions
         lastDay = data.lastDay
 
         rollover()
+        startWatching()
 
         let nc = NotificationCenter.default
         nc.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in self?.rollover() }
-        nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.rollover() }
+        nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.reloadIfChanged()
+            self?.rollover()
+        }
         nc.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in self?.saveNow() }
     }
 
     // MARK: - Day rollover
 
-    static func dayKey(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+    func rollover() {
+        var d = snapshot()
+        guard d.rollover() else { return }
+        tasks = d.tasks
+        lastDay = d.lastDay
+        scheduleSave()
     }
 
-    /// On a new day, open "tomorrow" tasks become "today" tasks.
-    func rollover() {
-        let today = Store.dayKey(Date())
-        guard today > lastDay else { return }
-        for i in tasks.indices where tasks[i].bucket == .tomorrow && !tasks[i].done {
-            tasks[i].bucket = .today
+    // MARK: - External changes (CLI / MCP)
+
+    private func startWatching() {
+        let fd = Darwin.open(DataFile.directory.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename], queue: .main)
+        src.setEventHandler { [weak self] in self?.reloadIfChanged() }
+        src.setCancelHandler { close(fd) }
+        src.resume()
+        watcher = src
+    }
+
+    private func reloadIfChanged() {
+        guard let raw = try? Data(contentsOf: DataFile.url), raw != lastSynced,
+              let d = try? DataFile.decoder.decode(AppData.self, from: raw) else { return }
+        lastSynced = raw
+        pendingSave?.cancel()
+        applyingExternal = true
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            tasks = d.tasks
+            actions = d.actions
         }
-        lastDay = today
-        scheduleSave()
+        lastDay = d.lastDay
+        applyingExternal = false
     }
 
     // MARK: - Queries
@@ -164,18 +173,13 @@ final class Store: ObservableObject {
 
     // MARK: - Persistence
 
-    private static let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        e.dateEncodingStrategy = .iso8601
-        return e
-    }()
-
-    private static let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+    private func snapshot() -> AppData {
+        var d = AppData()
+        d.tasks = tasks
+        d.actions = actions
+        d.lastDay = lastDay
         return d
-    }()
+    }
 
     private func scheduleSave() {
         pendingSave?.cancel()
@@ -186,12 +190,13 @@ final class Store: ObservableObject {
 
     func saveNow() {
         pendingSave?.cancel()
-        var data = AppData()
-        data.tasks = tasks
-        data.actions = actions
-        data.lastDay = lastDay
+        // An agent wrote while we had unsaved edits: take theirs rather than clobber it.
+        if let disk = try? Data(contentsOf: DataFile.url), disk != lastSynced {
+            reloadIfChanged()
+            return
+        }
         do {
-            try Store.encoder.encode(data).write(to: fileURL, options: .atomic)
+            lastSynced = try DataFile.save(snapshot())
         } catch {
             NSLog("DevTasks: save failed: \(error)")
         }
