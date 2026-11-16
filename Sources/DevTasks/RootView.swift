@@ -46,7 +46,7 @@ struct SidebarView: View {
             HStack(spacing: 8) {
                 FAIcon("terminal", size: 13).foregroundStyle(t.accent)
                 Text("devtasks").font(.mono(14, .bold))
-                Text("v1.0").font(.mono(10)).foregroundStyle(t.faint)
+                Text("v\(AppVersion.current)").font(.mono(10)).foregroundStyle(t.faint)
             }
             .padding(.horizontal, 14)
             .padding(.top, 46)

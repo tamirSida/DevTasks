@@ -9,6 +9,16 @@ struct DTError: Error, CustomStringConvertible {
     init(_ d: String) { description = d }
 }
 
+enum AppVersion {
+    /// From the app bundle's Info.plist; also works when the CLI runs through a symlink.
+    static let current: String = {
+        if let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String { return v }
+        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let bundleURL = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return Bundle(url: bundleURL)?.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    }()
+}
+
 enum DataFile {
     static var directory: URL {
         if let custom = ProcessInfo.processInfo.environment["DEVTASKS_DATA_DIR"], !custom.isEmpty {

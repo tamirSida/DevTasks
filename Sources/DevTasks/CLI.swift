@@ -67,7 +67,7 @@ enum CLI {
             case "help", "--help", "-h":
                 print(usage)
             case "version", "--version":
-                print("devtasks 1.1")
+                print("devtasks \(AppVersion.current)")
             case "path":
                 print(DataFile.url.path)
 

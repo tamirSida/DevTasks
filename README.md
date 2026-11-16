@@ -2,7 +2,22 @@
 
 A native macOS todo app for developers. SwiftUI, no servers, no accounts. Your data stays in one local JSON file.
 
-## Install on any Mac
+## Download (no build needed)
+
+Grab the latest **DevTasks-x.y.z-macOS.zip** from [Releases](https://github.com/tamirSida/DevTasks/releases/latest), unzip it, then:
+
+```bash
+cd ~/Downloads/DevTasks
+./install.sh
+```
+
+Universal build (Apple Silicon + Intel), macOS 14+. The app isn't signed with an Apple Developer ID, so `install.sh`
+clears the macOS download flag. If you drag the app to Applications by hand instead, macOS blocks the first launch:
+go to System Settings > Privacy & Security and click Open Anyway.
+
+To publish a new release (maintainers): bump and run `scripts/release.sh 1.2.0`.
+
+## Install on any Mac (from source)
 
 You need macOS 14 or newer and the Command Line Tools (`xcode-select --install`). Full Xcode is not required.
 

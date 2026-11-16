@@ -35,7 +35,7 @@ enum MCPServer {
             reply([
                 "protocolVersion": clientVersion,
                 "capabilities": ["tools": ["listChanged": false]],
-                "serverInfo": ["name": "devtasks", "version": "1.1"],
+                "serverInfo": ["name": "devtasks", "version": AppVersion.current],
                 "instructions": "Manage the user's DevTasks todo app. Lists: today, tomorrow, week, backlog. Tasks are referenced by the short id returned from list_tasks/add_task, or a unique part of the title. Changes appear in the open app immediately.",
             ])
         case "ping":
