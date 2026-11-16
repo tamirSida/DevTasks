@@ -8,6 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         OutsideClick.install()
         Feedback.preload()
+        if CommandLine.arguments.contains("--check-updates") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Updater.shared.openWizard() }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { Updater.shared.checkInBackground() }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -31,6 +36,9 @@ struct DevTasksApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 980, height: 680)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates\u{2026}") { Updater.shared.openWizard() }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Task") { store.showNotes = false; store.focusQuickAdd += 1 }
                     .keyboardShortcut("n")

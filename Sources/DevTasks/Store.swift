@@ -2,6 +2,9 @@ import SwiftUI
 import AppKit
 
 final class Store: ObservableObject {
+    /// The app's store, so the updater can flush unsaved edits before restarting.
+    static weak var shared: Store?
+
     @Published var tasks: [TaskItem] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var actions: [QuickAction] = [] { didSet { if !applyingExternal { scheduleSave() } } }
     @Published var notes: [Note] = [] { didSet { if !applyingExternal { scheduleSave() } } }
@@ -44,6 +47,7 @@ final class Store: ObservableObject {
 
         rollover()
         startWatching()
+        Store.shared = self
 
         let nc = NotificationCenter.default
         nc.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in self?.rollover() }

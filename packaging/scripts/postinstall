@@ -1,0 +1,29 @@
+#!/bin/bash
+# Runs as root after the Installer copies DevTasks.app into /Applications.
+APP="/Applications/DevTasks.app"
+USER_NAME="$(stat -f%Su /dev/console)"
+USER_HOME="$(dscl . -read "/Users/$USER_NAME" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+
+# Owned by the user so the in-app updater can replace it later without a password.
+if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
+  chown -R "$USER_NAME":staff "$APP"
+fi
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+
+# `devtasks` command for terminals and agents.
+mkdir -p /usr/local/bin
+ln -sf "$APP/Contents/MacOS/DevTasks" /usr/local/bin/devtasks
+
+# Claude Code skill, if Claude Code is set up for this user.
+if [ -n "$USER_HOME" ] && [ -d "$USER_HOME/.claude" ] && [ -d "$APP/Contents/Resources/skill/devtasks" ]; then
+  mkdir -p "$USER_HOME/.claude/skills"
+  rm -rf "$USER_HOME/.claude/skills/devtasks"
+  cp -R "$APP/Contents/Resources/skill/devtasks" "$USER_HOME/.claude/skills/devtasks"
+  chown -R "$USER_NAME":staff "$USER_HOME/.claude/skills"
+fi
+
+# Open the app for the logged-in user.
+if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
+  launchctl asuser "$(id -u "$USER_NAME")" sudo -u "$USER_NAME" /usr/bin/open "$APP" || true
+fi
+exit 0

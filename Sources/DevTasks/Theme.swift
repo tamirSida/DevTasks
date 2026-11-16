@@ -275,6 +275,21 @@ struct ThemeSettings: View {
             }
 
             HStack {
+                SectionLabel("updates")
+                Spacer()
+                Toggle(isOn: Binding(
+                    get: { UserDefaults.standard.object(forKey: Updater.autoKey) as? Bool ?? true },
+                    set: { UserDefaults.standard.set($0, forKey: Updater.autoKey) }
+                )) {
+                    Text("check automatically").font(.mono(11)).foregroundStyle(t.muted)
+                }
+                .toggleStyle(.checkbox)
+                Button("check now") { Updater.shared.openWizard() }
+                    .buttonStyle(.plain).handCursor()
+                    .font(.mono(11)).foregroundStyle(t.accent)
+            }
+
+            HStack {
                 SectionLabel("text size")
                 Spacer()
                 HStack(spacing: 4) {

@@ -31,6 +31,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 mv "build/${APP_NAME}.bin" "$APP/Contents/MacOS/${APP_NAME}"
 cp Resources/fa-solid-900.ttf Resources/fa-brands-400.ttf "$APP/Contents/Resources/"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+mkdir -p "$APP/Contents/Resources/skill"
+cp -R agent/skills/devtasks "$APP/Contents/Resources/skill/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

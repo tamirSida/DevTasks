@@ -4,18 +4,19 @@ A native macOS todo app for developers. SwiftUI, no servers, no accounts. Your d
 
 ## Download (no build needed)
 
-Grab the latest **DevTasks-x.y.z-macOS.zip** from [Releases](https://github.com/tamirSida/DevTasks/releases/latest), unzip it, then:
+1. Download **DevTasks-x.y.z.pkg** from [Releases](https://github.com/tamirSida/DevTasks/releases/latest).
+2. Double-click it. The Mac installer puts DevTasks in Applications, adds the `devtasks` command and the Claude skill, then opens the app.
 
-```bash
-cd ~/Downloads/DevTasks
-./install.sh
-```
+No Xcode needed. macOS 14+.
 
-Universal build (Apple Silicon + Intel), macOS 14+. The app isn't signed with an Apple Developer ID, so `install.sh`
-clears the macOS download flag. If you drag the app to Applications by hand instead, macOS blocks the first launch:
-go to System Settings > Privacy & Security and click Open Anyway.
+**First time only:** DevTasks isn't signed with a paid Apple Developer ID, so macOS says it can't verify the developer.
+Click Done, open System Settings > Privacy & Security, click **Open Anyway** next to DevTasks, and open the .pkg again.
 
-To publish a new release (maintainers): bump and run `scripts/release.sh 1.2.0`.
+**Updates:** DevTasks > Check for Updates (or `devtasks update`) downloads the new version, swaps it in place and restarts.
+The app also checks quietly on launch and shows an "update" pill in the sidebar when a new version is out.
+
+**Maintainers:** put user-facing changes in `packaging/whats-new.md`, commit, then run `scripts/release.sh 1.3.0`.
+It builds a universal app, the .pkg installer and the updater zip, and publishes a GitHub Release.
 
 ## Install on any Mac (from source)
 

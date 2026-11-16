@@ -5,6 +5,7 @@ struct RootView: View {
     @AppStorage(Prefs.opacity) private var opacity = 1.0
     @AppStorage(Prefs.blur) private var blur = true
     @AppStorage(UIScale.key) private var uiScale = 1.0
+    @ObservedObject private var updater = Updater.shared
 
     var body: some View {
         let translucent = opacity < 0.999
@@ -27,6 +28,9 @@ struct RootView: View {
         .foregroundStyle(t.text)
         .ignoresSafeArea()
         .id(uiScale)
+        .sheet(isPresented: $updater.showWizard) {
+            ThemeProvider(translucent: false) { UpdateWizard() }
+        }
         .frame(minWidth: 780, minHeight: 520)
         .tint(t.accent)
     }
@@ -71,6 +75,7 @@ struct SidebarView: View {
             Spacer()
 
             VStack(alignment: .leading, spacing: 10) {
+                UpdatePill()
                 HStack {
                     Text("done today").font(.mono(11)).foregroundStyle(t.muted)
                     Spacer()

@@ -1,0 +1,4 @@
+- **Mac installer**: double-click the .pkg; it installs DevTasks into Applications, the `devtasks` command and the Claude skill.
+- **Update wizard**: DevTasks > Check for Updates downloads and installs new versions in place, then restarts. Your data is kept.
+- `devtasks update` does the same from the terminal.
+- Custom lists, prompts button, scratchpad notes, Azure DevOps rich paste, more dark themes and text size (since 1.0).

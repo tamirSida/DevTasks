@@ -6,7 +6,7 @@ enum CLI {
     static let commands: Set<String> = [
         "add", "list", "ls", "done", "undo", "reopen", "move", "mv", "edit", "rename", "rm", "delete",
         "sub", "clear", "action", "actions", "mcp", "path", "help", "--help", "-h", "version", "--version",
-        "paste", "copy", "note", "notes", "lists", "prompt", "prompts",
+        "paste", "copy", "note", "notes", "lists", "prompt", "prompts", "update",
     ]
 
     static func handles(_ args: [String]) -> Bool {
@@ -25,7 +25,7 @@ enum CLI {
         func has(_ names: String...) -> Bool { names.contains { flags.contains($0) } }
     }
 
-    static let boolFlags: Set<String> = ["--json", "-j", "--all", "-a"]
+    static let boolFlags: Set<String> = ["--json", "-j", "--all", "-a", "--check", "--force"]
     static let valueOptions: Set<String> = ["--list", "-l", "--sub", "-s", "--icon", "-i", "--in"]
 
     /// Lets shell users type \n for a line break.
@@ -123,6 +123,8 @@ enum CLI {
                 let n = try TaskDB.clearDone(try bucket(a.positional.first == "all" ? nil : a.positional.first))
                 print(json ? TaskDB.jsonString(["removed": n]) : "cleared \(n) done task\(n == 1 ? "" : "s")")
 
+            case "update":
+                try runUpdate(a)
             case "lists":
                 try runLists(a, json)
             case "prompt", "prompts":
@@ -195,6 +197,50 @@ enum CLI {
         default:
             throw DTError("usage: devtasks prompt [list | add <title> <text> | show <prompt> | copy <prompt>]")
         }
+    }
+
+    /// Runs async work from the synchronous CLI.
+    private static func blocking<T>(_ f: @escaping () async throws -> T) throws -> T {
+        let sem = DispatchSemaphore(value: 0)
+        var result: Result<T, Error>?
+        Task.detached {
+            do { result = .success(try await f()) } catch { result = .failure(error) }
+            sem.signal()
+        }
+        sem.wait()
+        return try result!.get()
+    }
+
+    /// devtasks update [--check] [--force]: download the latest release and replace the installed app.
+    private static func runUpdate(_ a: Args) throws {
+        let current = AppVersion.current
+        let r = try blocking { try await UpdateEngine.fetchLatest() }
+        guard UpdateEngine.isNewer(r.version, than: current) || a.has("--force") else {
+            print("devtasks v\(current) is up to date")
+            return
+        }
+        print("update available: v\(current) -> v\(r.version)")
+        if a.has("--check") { return }
+        let dest = try UpdateEngine.installedApp()
+        var lastShown = -1
+        let zip = try blocking {
+            try await UpdateEngine.Downloader { p in
+                let pct = Int(p * 100)
+                if pct / 10 != lastShown / 10 { lastShown = pct; print("  downloading \(pct)%") }
+            }.download(r.assetURL)
+        }
+        print("  verifying")
+        let prepared = try UpdateEngine.prepare(zip: zip, expect: r.version)
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: UpdateEngine.bundleID)
+            .filter { $0.bundleURL?.standardizedFileURL.path == dest.standardizedFileURL.path }
+        running.forEach { $0.terminate() }
+        print("  installing to \(dest.path)")
+        let p = try UpdateEngine.launchSwap(newApp: prepared.app, root: prepared.root, dest: dest,
+                                            waitPID: running.first?.processIdentifier, relaunch: !running.isEmpty)
+        p.waitUntilExit()
+        let log = (try? String(contentsOf: prepared.root.deletingLastPathComponent().appendingPathComponent("swap.log"), encoding: .utf8)) ?? ""
+        guard log.contains("updated") else { throw DTError("install failed: \(log.trimmingCharacters(in: .whitespacesAndNewlines))") }
+        print("updated to v\(r.version)\(running.isEmpty ? "" : " (restarted the app)")")
     }
 
     private static func runLists(_ a: Args, _ json: Bool) throws {
@@ -370,6 +416,7 @@ enum CLI {
       devtasks copy <task>             copy a task; links stay clickable when pasted in chats
 
     other
+      devtasks update [--check]        download and install the latest release (no Xcode needed)
       devtasks mcp                     run as an MCP server (stdio)
       devtasks path                    print the data file location
 
